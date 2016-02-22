@@ -1,0 +1,4 @@
+grant {
+  // We're granting all permisions here, pending restriction in sandboxedTest
+  permission java.security.AllPermission;
+};

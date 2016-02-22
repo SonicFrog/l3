@@ -1,0 +1,116 @@
+;; In Emacs, open this file in -*- Scheme -*- mode.
+
+;; Integers
+
+(def int? (fun (o) (@int? o)))
+
+;; Basic arithmetic
+(def +@2 (fun (x y) (@+ x y)))
+(def +@3 (fun (x y z) (@+ x (@+ y z))))
+(def +@4 (fun (x y z t) (@+ (@+ x y) (@+ z t))))
+(def + +@2)
+
+(def -@1 (fun (x) (@- 0 x)))
+(def -@2 (fun (x y) (@- x y)))
+(def - -@2)
+
+(def *@2 (fun (x y) (@* x y)))
+(def *@3 (fun (x y z) (@* x (@* y z))))
+(def *@4 (fun (x y z t) (@* (@* x y) (@* z t))))
+(def * *@2)
+
+(def / (fun (x y) (@/ x y)))
+(def % (fun (x y) (@% x y)))
+
+;; Comparisons
+(def <@2 (fun (x y) (@< x y)))
+(def <@3 (fun (x y z) (and (@< x y) (@< y z))))
+(def < <@2)
+
+(def <=@2 (fun (x y) (@<= x y)))
+(def <=@3 (fun (x y z) (and (@<= x y) (@<= y z))))
+(def <= <=@2)
+
+(def >@2 (fun (x y) (@> x y)))
+(def >@3 (fun (x y z) (and (@> x y) (@> y z))))
+(def > >@2)
+
+(def >=@2 (fun (x y) (@>= x y)))
+(def >=@3 (fun (x y z) (and (@>= x y) (@>= y z))))
+(def >= >=@2)
+
+(def = (fun (x y) (@= x y)))
+(def != (fun (x y) (@!= x y)))
+
+;; Bitwise operations
+(def int-arithmetic-shift
+     (fun (x y)
+          (if (>= y 0) (@<< x y) (@>> x (- y)))))
+
+(def int-bitwise-and
+     (fun (x y)
+          (@& x y)))
+(def int-bitwise-or
+     (fun (x y)
+          (@| x y)))
+(def int-bitwise-xor
+     (fun (x y)
+          (@^ x y)))
+
+(def int-even?
+     (fun (i)
+          (= 0 (int-bitwise-and 1 i))))
+
+(def int-odd?
+     (fun (i)
+          (not (int-even? i))))
+
+(def int-abs
+     (fun (i)
+          (if (< i 0) (- i) i)))
+
+(def int-signum
+     (fun (i)
+          (cond ((< i 0) -1)
+                ((= i 0)  0)
+                (#t       1))))
+
+(def int-gcd
+     (fun (x y)
+          (rec loop ((x (int-abs x))
+                     (y (int-abs y)))
+               (if (= 0 y)
+                   x
+                   (loop y (% x y))))))
+
+(def int-pow
+     (fun (x y)
+          (rec loop ((x x) (y y))
+               (cond ((= 0 y)
+                      1)
+                     ((int-even? y)
+                      (let ((t (loop x (/ y 2))))
+                        (* t t)))
+                     (#t
+                      (* x (loop x (- y 1))))))))
+
+(def int-read
+     (letrec ((loop
+               (fun (acc-f acc)
+                    (let ((c (char-read)))
+                      (if (char-digit? c)
+                          (loop acc-f (acc-f (* acc 10) (char-digit->int c)))
+                          acc)))))
+       (fun ()
+            (let ((c (char-read)))
+              (cond ((= c '-') (loop - 0))
+                    ((char-digit? c) (loop + (char-digit->int c)))
+                    (#t 0))))))
+
+;; TODO complete this
+(def int-print
+  (fun (i) (char-print '?')))
+
+(def int->char
+     (fun (i)
+          (@int->char i)))
