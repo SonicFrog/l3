@@ -184,16 +184,51 @@ object L3Parser {
                  :+ Ident(b)))
   }
 
+  def True()(implicit pos : Position) = Lit(BooleanLit(true))
+  def False()(implicit pos : Position) = Lit(BooleanLit(false))
+
   private def sFun(args: Seq[String], body: Tree)
-                  (implicit p: Position): Tree = ???
+    (implicit p: Position): Tree = {
+    val funDef = Seq(FunDef(freshName("sFun"), args, body))
+
+    LetRec(funDef, Ident(funDef(0).name))
+  }
+
   private def sLet_*(bdgs: Seq[(String,Tree)], body: Tree)
-                    (implicit p: Position): Tree = ???
-  private def sBegin(exprs: Seq[Tree])(implicit p: Position): Tree = ???
+    (implicit p: Position): Tree = bdgs match {
+    case Nil => sBegin(body)
+    case e1 :: er => Let(Seq(e1), sLet_*(er))
+  }
+
+  private def sBegin(exprs: Seq[Tree])(implicit p: Position): Tree = exprs match {
+    case b1 :: Nil => b1
+    case b1 :: bx => Let(Seq((freshName("sBegin"), b1)), sBegin(bx))
+  }
+
   private def sRec(name: String, bdgs: Seq[(String, Tree)], body: Tree)
-                  (implicit p: Position) = ???
-  private def sAnd(es: Seq[Tree])(implicit p: Position): Tree = ???
-  private def sOr(es: Seq[Tree])(implicit p: Position): Tree = ???
-  private def sNot(e: Tree)(implicit p: Position): Tree = ???
-  private def sCond(clses: Seq[(Tree, Seq[Tree])])(implicit p: Position): Tree = ???
+    (implicit p: Position) = ???
+
+  private def sAnd(es: Seq[Tree])(implicit p: Position): Tree = es match {
+    case e :: Nil => e
+    case e1 :: ee => If(e1, sAnd(ee), False())
+  }
+
+  private def sOr(es: Seq[Tree])(implicit p: Position): Tree = es match {
+    case e :: Nil => e
+    case e1 :: ee => Let(Seq((freshName("sOr"), e1)), If(e1, e1, sOr(ee)))
+  }
+  private def sNot(e: Tree)(implicit p: Position): Tree = {
+    If(e, False(), True())
+      }
+
+  private def sCond(clses: Seq[(Tree, Seq[Tree])])(implicit p: Position): Tree = clses match {
+    case Nil => ??? //TODO: return unit value
+    case e1 :: er => {
+      val cnd = e1._1
+      val body = e1._2
+
+      If(cnd, sBegin(body), sCond(er))
+    }
+  }
   private def codePoints(chars: Seq[Char]): Seq[Int] = ???
 }
