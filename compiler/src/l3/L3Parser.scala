@@ -195,5 +195,13 @@ object L3Parser {
   private def sOr(es: Seq[Tree])(implicit p: Position): Tree = ???
   private def sNot(e: Tree)(implicit p: Position): Tree = ???
   private def sCond(clses: Seq[(Tree, Seq[Tree])])(implicit p: Position): Tree = ???
-  private def codePoints(chars: Seq[Char]): Seq[Int] = ???
+
+  private def codePoints(chars: Seq[Char]): Seq[Int] = chars match {
+    case Seq(h, l, r @ _*) if (Character.isSurrogatePair(h, l)) =>
+      Character.toCodePoint(h, l) +: codePoints(r)
+    case Seq(c, r @ _*) =>
+      c.toInt +: codePoints(r)
+    case Seq() =>
+      Seq()
+  }
 }
