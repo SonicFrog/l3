@@ -216,7 +216,10 @@ object L3Parser {
 
   private def sOr(es: Seq[Tree])(implicit p: Position): Tree = es match {
     case Seq(e) => e
-    case Seq(e1, ee@_*) => Let(Seq((freshName("sOr"), e1)), If(e1, e1, sOr(ee)))
+    case Seq(e1, ee@_*) => {
+      val name = freshName("v")
+      Let(Seq((name, e1)), If(Ident(name), Ident(name), sOr(ee)))
+    }
   }
 
   private def sNot(e: Tree)(implicit p: Position): Tree = {
