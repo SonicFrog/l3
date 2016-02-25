@@ -186,44 +186,46 @@ object L3Parser {
 
   def True()(implicit pos : Position) = Lit(BooleanLit(true))
   def False()(implicit pos : Position) = Lit(BooleanLit(false))
+  def Unit()(implicit pos : Position) = Lit(UnitLit)
 
   private def sFun(args: Seq[String], body: Tree)
     (implicit p: Position): Tree = {
-    val funDef = Seq(FunDef(freshName("sFun"), args, body))
+    val funDef = Seq(FunDef(freshName("v"), args, body))
 
     LetRec(funDef, Ident(funDef(0).name))
   }
 
   private def sLet_*(bdgs: Seq[(String,Tree)], body: Tree)
     (implicit p: Position): Tree = bdgs match {
-    case Nil => sBegin(Seq(body))
-    case e1 :: er => Let(Seq(e1), sLet_*(er, body))
+    case Seq() => sBegin(Seq(body))
+    case Seq(e1, er@_*) => Let(Seq(e1), sLet_*(er, body))
   }
 
   private def sBegin(exprs: Seq[Tree])(implicit p: Position): Tree = exprs match {
-    case b1 :: Nil => b1
-    case b1 :: bx => Let(Seq((freshName("sBegin"), b1)), sBegin(bx))
+    case Seq(b1) => b1
+    case Seq(b1, bx@_*) => Let(Seq((freshName("v"), b1)), sBegin(bx))
   }
 
   private def sRec(name: String, bdgs: Seq[(String, Tree)], body: Tree)
     (implicit p: Position) = ???
 
   private def sAnd(es: Seq[Tree])(implicit p: Position): Tree = es match {
-    case e :: Nil => e
-    case e1 :: ee => If(e1, sAnd(ee), False())
+    case Seq(e) => e
+    case Seq(e1, ee@_*)=> If(e1, sAnd(ee), False())
   }
 
   private def sOr(es: Seq[Tree])(implicit p: Position): Tree = es match {
-    case e :: Nil => e
-    case e1 :: ee => Let(Seq((freshName("sOr"), e1)), If(e1, e1, sOr(ee)))
+    case Seq(e) => e
+    case Seq(e1, ee@_*) => Let(Seq((freshName("sOr"), e1)), If(e1, e1, sOr(ee)))
   }
+
   private def sNot(e: Tree)(implicit p: Position): Tree = {
     If(e, False(), True())
       }
 
   private def sCond(clses: Seq[(Tree, Seq[Tree])])(implicit p: Position): Tree = clses match {
-    case Nil => ??? //TODO: return unit value
-    case e1 :: er => {
+    case Nil => Unit()
+    case Seq(e1, er@_*) => {
       val cnd = e1._1
       val body = e1._2
 
