@@ -11,7 +11,7 @@ import fastparse.core.Parsed
 
 object L3Parser {
   def parse(programText: String,
-            indexToPosition: Int=>Position): Parsed[Tree] = {
+    indexToPosition: Int=>Position): Parsed[Tree] = {
     val parser = new S(indexToPosition)
     parser.program.parse(programText)
   }
@@ -31,8 +31,8 @@ object L3Parser {
     private def isStringChar(c: Char): Boolean = (c != '\n' && c != '"')
     private val unicodeChar =
       (CharPred(!Character.isHighSurrogate(_))
-         | (CharPred(Character.isHighSurrogate)
-              ~ CharPred(Character.isLowSurrogate)))
+        | (CharPred(Character.isHighSurrogate)
+          ~ CharPred(Character.isLowSurrogate)))
 
     private val integer2 = (Index ~ prefix2 ~/ (sign.? ~ digit2.rep(1)).!)
       .map { case (i, s) => Lit(IntLit(Integer.parseInt(s, 2)))(i) }
@@ -54,8 +54,8 @@ object L3Parser {
 
     // Identifiers
     private val identStart = CharIn("|!%&*+-./:<=>?^_~"
-                                      + "abcdefghijklmnopqrstuvwxyz"
-                                      + "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+      + "abcdefghijklmnopqrstuvwxyz"
+      + "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     private val identCont = identStart | sign | digit10
     private val identSuffix = "@" ~ digit10.rep(1)
 
@@ -87,8 +87,8 @@ object L3Parser {
   private class S(indexToPosition: Int=>Position) {
     val White = fastparse.WhitespaceApi.Wrapper {
       import fastparse.all._
-      (CharIn(" \t\n\r")
-         | (";" ~ CharPred(c => c != '\n' && c != '\r').rep)).rep
+        (CharIn(" \t\n\r")
+          | (";" ~ CharPred(c => c != '\n' && c != '\r').rep)).rep
     }
     import White._
     import fastparse.noApi._
@@ -111,9 +111,9 @@ object L3Parser {
       .map { case (i, (e, p)) => sBegin(e +: p.toSeq)(i) }
 
     private val expr = P(fun | let | let_* | letrec | rec | begin
-                           | cond | if_ | and | or | not
-                           | halt | app | prim
-                           | literal | identifier)
+      | cond | if_ | and | or | not
+      | halt | app | prim
+      | literal | identifier)
     private val exprs = expr.rep
     private val iExprs = ix(exprs)
 
@@ -177,11 +177,11 @@ object L3Parser {
     val b = freshName("string")
     val cs = codePoints(s)
     Let(Seq((b, Prim("block-alloc-"+ BlockTag.String.id,
-                     Seq(Lit(IntLit(cs.length)))))),
-        sBegin((cs.zipWithIndex map {case (c, i) =>
-                  Prim("block-set!",
-                       Seq(Ident(b), Lit(IntLit(i)), Lit(CharLit(c)))) })
-                 :+ Ident(b)))
+      Seq(Lit(IntLit(cs.length)))))),
+      sBegin((cs.zipWithIndex map {case (c, i) =>
+        Prim("block-set!",
+          Seq(Ident(b), Lit(IntLit(i)), Lit(CharLit(c)))) })
+        :+ Ident(b)))
   }
 
   def True()(implicit pos : Position) = Lit(BooleanLit(true))
@@ -212,14 +212,13 @@ object L3Parser {
     val argsExpr : Seq[Tree] = bdgs.map(x => x._2)
     val fun = FunDef(name, args, body)
 
-    LetRec(Seq(fun), App(body, argsExpr))
-    //TODO: fix the #u bug!
+    LetRec(Seq(fun), App(Ident(name), argsExpr))
   }
 
   private def sAnd(es: Seq[Tree])(implicit p: Position): Tree = es match {
     case Seq(e) => e
     case Seq(e1, ee@_*)=> If(e1, sAnd(ee), False())
-  }
+      }
 
   private def sOr(es: Seq[Tree])(implicit p: Position): Tree = es match {
     case Seq(e) => e
@@ -240,7 +239,15 @@ object L3Parser {
       val body = e1._2
 
       If(cnd, sBegin(body), sCond(er))
-    }
+        }
   }
-  private def codePoints(chars: Seq[Char]): Seq[Int] = ???
+
+  private def codePoints(chars: Seq[Char]): Seq[Int] = chars match {
+    case Seq(h, l, r @ _*) if (Character.isSurrogatePair(h, l)) =>
+      Character.toCodePoint(h, l) +: codePoints(r)
+    case Seq(c, r @ _*) =>
+      c.toInt +: codePoints(r)
+    case Seq() =>
+      Seq()
+  }
 }
