@@ -207,7 +207,14 @@ object L3Parser {
   }
 
   private def sRec(name: String, bdgs: Seq[(String, Tree)], body: Tree)
-    (implicit p: Position) = ???
+    (implicit p: Position) = {
+    val args : Seq[Name] = bdgs.map({case (name, _) => name})
+    val argsExpr : Seq[Tree] = bdgs.map(x => x._2)
+    val fun = FunDef(name, args, body)
+
+    LetRec(Seq(fun), App(body, argsExpr))
+    //TODO: fix the #u bug!
+  }
 
   private def sAnd(es: Seq[Tree])(implicit p: Position): Tree = es match {
     case Seq(e) => e
