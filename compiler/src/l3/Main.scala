@@ -3,6 +3,7 @@ package l3
 import java.nio.file.FileSystems
 import fastparse.core.Parsed.{ Success, Failure }
 import CL3TreeFormatter._
+import CPSTreeFormatter._
 
 object Main extends MainHelper {
   def main(args: Array[String]): Unit = {
@@ -15,7 +16,11 @@ object Main extends MainHelper {
         case Success(program, _) =>
           val backEnd = (
             CL3NameAnalyzer
-              andThen CL3Interpreter
+              andThen treePrinter("Tree in CL3")
+              andThen CL3ToCPSTranslator
+              andThen passThrough(SymbolicCPSTreeChecker)
+              andThen treePrinter("Tree in CPS")
+              andThen CPSInterpreterHigh
           )
           try {
             backEnd(program)

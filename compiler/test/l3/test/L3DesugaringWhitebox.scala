@@ -73,11 +73,11 @@ class L3DesugaringWhitebox extends L3Test {
 
   @Test def testSOr = testL3TreeEquality(
     "(fun (x y) (or x y))",
-    ???
+    ??? //TODO
   )
 
   @Test def testSNot = testL3TreeEquality(
     "(fun (x) (not x))",
-    ???
+    ??? //TODO
   )
 }
