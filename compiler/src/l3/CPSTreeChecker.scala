@@ -83,3 +83,6 @@ abstract class CPSTreeChecker[T <: CPSTreeModule](treeModule: T)
 object SymbolicCPSTreeChecker
     extends CPSTreeChecker(SymbolicCPSTreeModule)
 
+object SymbolicCPSTreeLowChecker
+    extends CPSTreeChecker(SymbolicCPSTreeModuleLow)
+

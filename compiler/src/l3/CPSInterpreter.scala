@@ -170,3 +170,68 @@ class CPSInterpreterHigh extends CPSInterpreter(SymbolicCPSTreeModule)
     }
 }
 
+object CPSInterpreterLow extends CPSInterpreterLow
+class CPSInterpreterLow extends CPSInterpreter(SymbolicCPSTreeModuleLow)
+    with (SymbolicCPSTreeModuleLow.Tree => Unit) {
+  import treeModule._
+  import scala.language.implicitConversions
+
+  protected case class BlockV(addr: Int, tag: Int, contents: Array[Value])
+      extends Value
+  protected case class IntV(value: Int) extends Value
+
+  private var nextBlockAddr = 0
+  private def allocBlock(tag: Int, contents: Array[Value]): BlockV = {
+    val block = BlockV(nextBlockAddr, tag, contents)
+    nextBlockAddr += 4
+    block
+  }
+
+  private implicit def valueToInt(v: Value): Int = v match {
+    case BlockV(addr, _, _) => addr
+    case IntV(value)        => value
+    case _: FunV | _: CntV  => sys.error(s"cannot convert $v to integer")
+  }
+
+  protected def wrapFunV(funV: FunV): Value = funV
+  protected def unwrapFunV(v: Value): FunV = v.asInstanceOf[FunV]
+
+  protected def evalLit(l: Literal): Value = IntV(l)
+
+  protected def evalValuePrim(p: ValuePrimitive, args: Seq[Value]): Value =
+    (p, args) match {
+      case (CPSAdd, Seq(v1, v2)) => IntV(v1 + v2)
+      case (CPSSub, Seq(v1, v2)) => IntV(v1 - v2)
+      case (CPSMul, Seq(v1, v2)) => IntV(v1 * v2)
+      case (CPSDiv, Seq(v1, v2)) => IntV(floorDiv(v1, v2))
+      case (CPSMod, Seq(v1, v2)) => IntV(floorMod(v1, v2))
+
+      case (CPSArithShiftL, Seq(v1, v2)) => IntV(v1 << v2)
+      case (CPSArithShiftR, Seq(v1, v2)) => IntV(v1 >> v2)
+      case (CPSAnd, Seq(v1, v2)) => IntV(v1 & v2)
+      case (CPSOr, Seq(v1, v2)) => IntV(v1 | v2)
+      case (CPSXOr, Seq(v1, v2)) => IntV(v1 ^ v2)
+
+      case (CPSByteRead, Seq()) => IntV(readByte())
+      case (CPSByteWrite, Seq(c)) => writeByte(c); IntV(0)
+
+      case (CPSBlockAlloc(t), Seq(s)) => allocBlock(t, Array.fill(s)(IntV(0)))
+      case (CPSBlockTag, Seq(BlockV(_, t, _))) => IntV(t)
+      case (CPSBlockLength, Seq(BlockV(_, _, c))) => IntV(c.length)
+      case (CPSBlockGet, Seq(BlockV(_, _, c), i)) => c(i)
+      case (CPSBlockSet, Seq(BlockV(_, _, c), i, v)) => c(i) = v; IntV(0)
+
+      case (CPSId, Seq(o)) => o
+    }
+
+  protected def evalTestPrim(p: TestPrimitive, args: Seq[Value]): Boolean =
+    (p, args) match {
+      case (CPSLt, Seq(v1, v2)) => v1 < v2
+      case (CPSLe, Seq(v1, v2)) => v1 <= v2
+      case (CPSEq, Seq(v1, v2)) => v1 == v2
+      case (CPSNe, Seq(v1, v2)) => v1 != v2
+      case (CPSGe, Seq(v1, v2)) => v1 >= v2
+      case (CPSGt, Seq(v1, v2)) => v1 > v2
+    }
+}
+
