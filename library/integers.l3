@@ -108,12 +108,11 @@
                     (#t 0))))))
 
 (def int-print
-  (fun (i)
-       (rec loop ((i i))
-            (if (and (<= -9 i) (<= i 9))
-                (if (< i 0) (char-print '-'))
-                (loop (/ i 10)))
-            (char-print (int->char-digit (% (int-abs i) 10))))))
+    (fun (i)
+          (if (< i 0) (char-print '-'))
+          (rec loop ((i (if (< i 0) i (- i))))
+               (if (<= i -10) (loop (/ (+ i 9) 10)))
+               (char-print (int->char-digit (- (% i -10)))))))
 
 (def int->char
      (fun (i)
