@@ -172,7 +172,6 @@ object L3Parser {
     prefix + "$" + freshCounter
   }
 
-  // TODO: We give you the hardest case, complete the rest!
   private def sStringLit(s: String)(implicit p: Position): Tree = {
     val b = freshName("string")
     val cs = codePoints(s)
