@@ -22,6 +22,86 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
       case S.Let(Seq(), body) =>
         nonTail(body)(ctx)
 
+      case S.Ident(x) => {
+        ctx(x)
+      }
+
+      case S.Lit(v) => {
+        val name = Symbol.fresh("l")
+        val body = ctx(name)
+        C.LetL(name, v, body)
+      }
+
+      case S.LetRec(funs, body) => {
+        val newFuns = funs.map(
+          { case S.FunDef(f, args, fbody) =>
+            val cname = Symbol.fresh("c")
+            C.FunDef(f, cname, args, tail(fbody, cname))
+          }
+        )
+        C.LetF(newFuns, nonTail(body)(ctx))
+      }
+
+      case S.App(fun, args) => {
+        val c = Symbol.fresh("c")
+
+        nonTail_*(fun +: args)(l => {
+          C.LetC(Seq(C.CntDef(c, Seq(c), ctx(c))),
+            (C.AppF(l.head, c, l.tail)))
+        })
+      }
+
+      case S.If(e1, e2, e3) =>
+        e1 match {
+          case S.Prim(p, args) => {
+            p match {
+              case p : C.TestPrimitive => {
+                val r = Symbol.fresh("r")
+                tempLetC("c", Seq(r), ctx(r))(x =>
+                  tempLetC("ct", Seq(), tail(e2, x))(y =>
+                    tempLetC("cf", Seq(), tail(e3, x))(z =>
+                      nonTail_*(args)(largs => {
+                        C.If(p, largs, y, z)
+                      })
+                    )
+                  )
+                )
+              }
+              case _ => throw new Exception(s"Invalid primitive $p")
+            }
+          }
+
+          case _ => {
+            val r = Symbol.fresh("r")
+
+            tempLetC("c", Seq(r), ctx(r))(x =>
+              tempLetC("ct", Seq(), tail(e2, x))(y =>
+                tempLetC("cf", Seq(), tail(e3, x))(z =>
+                  cond(e1, y, z)
+                )
+              )
+            )
+          }
+        }
+
+      case S.Prim(p, args) => {
+        p match {
+          case prim : C.TestPrimitive => {
+            nonTail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))))(ctx)
+          }
+
+          case prim : C.ValuePrimitive => {
+            val v = Symbol.fresh("p")
+            nonTail_*(args)(l => {
+              C.LetP(v, prim, l, ctx(v))
+            })
+          }
+
+          case _ => throw new Exception(s"Invalid primitive $p")
+        }
+      }
+
+
       case _ => ??? // TODO
     }
   }
@@ -46,7 +126,35 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
       case S.Let(Seq(), body) =>
         tail(body, c)
 
-      case _ => ??? // TODO
+      case S.LetRec(funs, body) => {
+        val newFuns =  funs.map({
+          case S.FunDef(name, args, fbody) => C.FunDef(name, c, args, tail(fbody, c))
+        })
+        C.LetF(newFuns, tail(body, c))
+      }
+
+      case S.App(fun, args) => {
+        nonTail_*(fun +: args)(l => {
+          C.AppF(l.head, c, l.tail)
+        })
+      }
+
+      case S.Prim(p, args) => {
+        p match {
+          case p : C.TestPrimitive => {
+            tail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), c)
+          }
+
+          case p : C.ValuePrimitive => {
+            val pname = Symbol.fresh("p")
+            nonTail_*(args)(largs => C.LetP(pname, p, largs, C.AppC(c, Seq(pname))))
+          }
+
+          case _ => throw new Exception(s"Invalid primitive $p")
+        }
+      }
+
+      case other => nonTail(tree)(v => C.AppC(c, Seq(v)))
     }
   }
 
@@ -60,9 +168,17 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
       case S.If(condE, S.Lit(tl), S.Lit(fl)) =>
         cond(condE, litToCont(tl), litToCont(fl))
 
-      // TODO
+      case S.If(condE, thenE, S.Lit(BooleanLit(false))) =>
+        tempLetC("ac", Seq(), cond(thenE, trueC, falseC))(c =>
+          cond(condE, c, falseC)
+        )
 
-      case S.Prim(p: L3TestPrimitive, args) =>
+      case S.If(condE, S.Lit(BooleanLit(false)), elseE) =>
+        tempLetC("ac", Seq(), cond(elseE, trueC, falseC))(c =>
+          cond(condE, falseC, c)
+        )
+
+      case S.Prim(p: C.TestPrimitive, args) =>
         nonTail_*(args)(as => C.If(p, as, trueC, falseC))
 
       case other =>
@@ -73,7 +189,7 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
   }
 
   private def tempLetC(cName: String, args: Seq[C.Name], cBody: C.Tree)
-                      (body: C.Name=>C.Tree): C.Tree = {
+    (body: C.Name=>C.Tree): C.Tree = {
     val cSym = Symbol.fresh(cName)
     C.LetC(Seq(C.CntDef(cSym, args, cBody)), body(cSym))
   }
