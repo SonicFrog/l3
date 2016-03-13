@@ -178,6 +178,16 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
           cond(condE, falseC, c)
         )
 
+      case S.If(condE, S.Lit(BooleanLit(true), elseE)) =>
+        tempLetC("ac", Seq(), cond(elseE, trueC, falseC))(c =>
+          cond(condE, trueC, c)
+        )
+
+      case S.If(condE, thenE, S.Lit(BooleanLit(true))) =>
+        tempLetC("ac", Seq(), cond(thenE, trueC, falseC))(c =>
+          cond(condE, ac, trueC)
+        )
+
       case S.Prim(p: C.TestPrimitive, args) =>
         nonTail_*(args)(as => C.If(p, as, trueC, falseC))
 
