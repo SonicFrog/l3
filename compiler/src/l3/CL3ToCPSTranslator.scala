@@ -182,7 +182,7 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
           cond(condE, c, trueC)
         )
 
-      case S.Prim(p: C.TestPrimitive, args) =>
+      case S.Prim(p: L3TestPrimitive, args) =>
         nonTail_*(args)(as => C.If(p, as, trueC, falseC))
 
       case other =>
