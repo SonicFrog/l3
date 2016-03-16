@@ -54,9 +54,9 @@ object L3Parser {
 
     // Identifiers
     private val identStart = CharIn("|!%&*+-./:<=>?^_~"
-      + "abcdefghijklmnopqrstuvwxyz"
-      + "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    private val identCont = identStart | sign | digit10
+                                      + "abcdefghijklmnopqrstuvwxyz"
+                                      + "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    private val identCont = identStart | digit10
     private val identSuffix = "@" ~ digit10.rep(1)
 
     val identStr = (identStart ~/ identCont.rep ~/ identSuffix.?).!
