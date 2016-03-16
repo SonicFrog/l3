@@ -44,65 +44,46 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
 
       case S.App(fun, args) => {
         val c = Symbol.fresh("c")
+        val r = Symbol.fresh("r")
 
         nonTail_*(fun +: args)(l => {
-          C.LetC(Seq(C.CntDef(c, Seq(c), ctx(c))),
+          C.LetC(Seq(C.CntDef(c, Seq(r), ctx(r))),
             (C.AppF(l.head, c, l.tail)))
         })
       }
 
-      case S.If(e1, e2, e3) =>
-        e1 match {
-          case S.Prim(p, args) => {
-            p match {
-              case p : C.TestPrimitive => {
-                val r = Symbol.fresh("r")
-                tempLetC("c", Seq(r), ctx(r))(x =>
-                  tempLetC("ct", Seq(), tail(e2, x))(y =>
-                    tempLetC("cf", Seq(), tail(e3, x))(z =>
-                      nonTail_*(args)(largs => {
-                        C.If(p, largs, y, z)
-                          })
-                    )
-                  )
-                )
-              }
-              case _ => throw new Exception(s"Invalid primitive $p")
-            }
-          }
-
-          case _ => {
-            val r = Symbol.fresh("r")
-
-            tempLetC("c", Seq(r), ctx(r))(x =>
-              tempLetC("ct", Seq(), tail(e2, x))(y =>
-                tempLetC("cf", Seq(), tail(e3, x))(z =>
-                  cond(e1, y, z)
-                )
-              )
+      case S.If(S.Prim(p : L3TestPrimitive, args), e2, e3) => {
+        val r = Symbol.fresh("r")
+        tempLetC("c", Seq(r), ctx(r))(x =>
+          tempLetC("ct", Seq(), tail(e2, x))(y =>
+            tempLetC("cf", Seq(), tail(e3, x))(z =>
+              nonTail_*(args)(largs => C.If(p, largs, y, z))
             )
-          }
-        }
-
-      case S.Prim(p, args) => {
-        p match {
-          case prim : C.TestPrimitive => {
-            nonTail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))))(ctx)
-          }
-
-          case prim : C.ValuePrimitive => {
-            val v = Symbol.fresh("p")
-            nonTail_*(args)(l => {
-              C.LetP(v, prim, l, ctx(v))
-            })
-          }
-
-          case _ => throw new Exception(s"Invalid primitive $p")
-        }
+          )
+        )
       }
 
+      case S.If(e1, e2, e3) => {
+        val r = Symbol.fresh("r")
 
-      case _ => ??? // TODO
+        tempLetC("c", Seq(r), ctx(r))(x =>
+          tempLetC("ct", Seq(), tail(e2, x))(y =>
+            tempLetC("cf", Seq(), tail(e3, x))(z =>
+              cond(e1, y, z)
+            )
+          )
+        )
+      }
+
+      case p @ S.Prim(_ : L3TestPrimitive, _) =>
+        nonTail(S.If(p, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))))(ctx)
+
+      case S.Prim(p: L3ValuePrimitive, args) => {
+        val v = Symbol.fresh("p")
+        nonTail_*(args)(l => {
+          C.LetP(v, p, l, ctx(v))
+        })
+      }
     }
   }
 
@@ -126,6 +107,13 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
       case S.Let(Seq(), body) =>
         tail(body, c)
 
+      case S.Ident(name) => C.AppC(c, Seq(name))
+
+      case S.Lit(v) => {
+        val l = Symbol.fresh("l")
+        C.LetL(l, v, C.AppC(c, Seq(l)))
+      }
+
       case S.LetRec(funs, body) => {
         val newFuns =  funs.map({
           case S.FunDef(name, args, fbody) => C.FunDef(name, c, args, tail(fbody, c))
@@ -139,43 +127,29 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         })
       }
 
-      case S.If(e1, e2, e3) => e1 match {
-        case S.Prim(p, args) => {
-          p match {
-            case p : C.TestPrimitive => {
-              tempLetC("ct", Seq(), tail(e2, c))(ct =>
-                tempLetC("cf", Seq(), tail(e3, c))(cf =>
-                  nonTail_*(args)(l =>
-                    C.If(p, l, ct, cf)
-                  )
-                )
-              )
-            }
-          }
-        }
-        case _ => {
-          tempLetC("ct", Seq(), tail(e2, c))(ct =>
-            tempLetC("cf", Seq(), tail(e3, c))(cf =>
-              cond(e1, ct, cf)
-            )
+      case S.If(S.Prim(p : L3TestPrimitive, args), e2, e3) => {
+        tempLetC("ct", Seq(), tail(e2, c))(ct =>
+          tempLetC("cf", Seq(), tail(e3, c))(cf =>
+            nonTail_*(args)(l => C.If(p, l, ct, cf))
           )
-        }
+        )
       }
 
-      case S.Prim(p, args) => {
-        p match {
-          case p : C.TestPrimitive => {
-            tail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), c)
-          }
-
-          case p : C.ValuePrimitive => {
-            val pname = Symbol.fresh("p")
-            nonTail_*(args)(largs => C.LetP(pname, p, largs, C.AppC(c, Seq(pname))))
-          }
-
-          case _ => throw new Exception(s"Invalid primitive $p")
-        }
+      case S.If(e1, e2, e3) => {
+        tempLetC("ct", Seq(), tail(e2, c))(ct =>
+          tempLetC("cf", Seq(), tail(e3, c))(cf =>
+            cond(e1, ct, cf)
+          )
+        )
       }
+
+      case S.Prim(p : L3ValuePrimitive, args) => {
+        val pname = Symbol.fresh("p")
+        nonTail_*(args)(largs => C.LetP(pname, p, largs, C.AppC(c, Seq(pname))))
+      }
+
+      case e @ S.Prim(_ : L3TestPrimitive, _) =>
+        tail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), c)
 
       case other => nonTail(tree)(v => C.AppC(c, Seq(v)))
     }
