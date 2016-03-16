@@ -121,11 +121,8 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         C.LetF(newFuns, tail(body, c))
       }
 
-      case S.App(fun, args) => {
-        nonTail_*(fun +: args)(l => {
-          C.AppF(l.head, c, l.tail)
-        })
-      }
+      case S.App(fun, args) =>
+        nonTail_*(fun +: args)(l => C.AppF(l.head, c, l.tail))
 
       case S.If(S.Prim(p : L3TestPrimitive, args), e2, e3) => {
         tempLetC("ct", Seq(), tail(e2, c))(ct =>
