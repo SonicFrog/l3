@@ -139,12 +139,27 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         })
       }
 
-      case S.If(e1, e2, e3) => {
-        tempLetC("ct", Seq(), tail(e2, c))(ct =>
-          tempLetC("cf", Seq(), tail(e3, c))(cf =>
-            cond(e1, ct, cf)
+      case S.If(e1, e2, e3) => e1 match {
+        case S.Prim(p, args) => {
+          p match {
+            case p : C.TestPrimitive => {
+              tempLetC("ct", Seq(), tail(e2, c))(ct =>
+                tempLetC("cf", Seq(), tail(e3, c))(cf =>
+                  nonTail_*(args)(l =>
+                    C.If(p, l, ct, cf)
+                  )
+                )
+              )
+            }
+          }
+        }
+        case _ => {
+          tempLetC("ct", Seq(), tail(e2, c))(ct =>
+            tempLetC("cf", Seq(), tail(e3, c))(cf =>
+              cond(e1, ct, cf)
+            )
           )
-        )
+        }
       }
 
       case S.Prim(p, args) => {
