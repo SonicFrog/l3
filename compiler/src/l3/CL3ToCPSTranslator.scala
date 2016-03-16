@@ -62,7 +62,7 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
                     tempLetC("cf", Seq(), tail(e3, x))(z =>
                       nonTail_*(args)(largs => {
                         C.If(p, largs, y, z)
-                      })
+                          })
                     )
                   )
                 )
@@ -137,6 +137,14 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         nonTail_*(fun +: args)(l => {
           C.AppF(l.head, c, l.tail)
         })
+      }
+
+      case S.If(e1, e2, e3) => {
+        tempLetC("ct", Seq(), tail(e2, c))(ct =>
+          tempLetC("cf", Seq(), tail(e3, c))(cf =>
+            cond(e1, ct, cf)
+          )
+        )
       }
 
       case S.Prim(p, args) => {
