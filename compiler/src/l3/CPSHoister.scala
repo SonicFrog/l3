@@ -14,13 +14,13 @@ object CPSHoister extends (Tree => Tree) {
     //TODO: handle other cases
   }
 
-  private def hoistC(cnt: CntDef): (List[FunDef], CntDef) = {
+  private def hoistC(cnt: CntDef): (Seq[FunDef], CntDef) = {
     val LetF(funs, hBody) = hoist(cnt.body)
     (funs, CntDef(cnt.name, cnt.args, hBody))
   }
 
   private def hoistF(fun: FunDef): List[FunDef] = {
     val LetF(funs, hBody) = hoist(fun.body)
-    FunDef(fun.name, fun.retC, fun.args, hBody) :: funs
+    FunDef(fun.name, fun.retC, fun.args, hBody) +: funs.toList
   }
 }
