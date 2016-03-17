@@ -3,8 +3,12 @@ package l3
 import SymbolicCPSTreeModuleLow._
 
 object CPSHoister extends (Tree => Tree) {
-  def apply(tree: Tree): Tree =
-    hoist(tree)
+  def apply(tree: Tree): Tree = {
+    hoist(tree) match {
+      case LetF(Seq(), body) => body
+      case other => other
+    }
+  }
 
   private def hoist(tree: Tree): LetF = tree match {
     case LetL(name, value, body) =>
