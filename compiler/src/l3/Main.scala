@@ -22,6 +22,7 @@ object Main extends MainHelper {
               andThen CPSValueRepresenter
               andThen treePrinter("Tree in CPS-low")
               andThen passThrough(SymbolicCPSTreeLowChecker)
+              andThen CPSHoister
               andThen CPSInterpreterLow
           )
           try {
