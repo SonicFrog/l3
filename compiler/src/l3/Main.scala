@@ -18,9 +18,11 @@ object Main extends MainHelper {
             CL3NameAnalyzer
               andThen treePrinter("Tree in CL3")
               andThen CL3ToCPSTranslator
-              andThen passThrough(SymbolicCPSTreeChecker)
               andThen treePrinter("Tree in CPS")
-              andThen CPSInterpreterHigh
+              andThen CPSValueRepresenter
+              andThen treePrinter("Tree in CPS-low")
+              andThen passThrough(SymbolicCPSTreeLowChecker)
+              andThen CPSInterpreterLow
           )
           try {
             backEnd(program)
