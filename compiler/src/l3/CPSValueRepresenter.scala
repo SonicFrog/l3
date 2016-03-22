@@ -29,6 +29,25 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.If(L3IntP, Seq(a), thenC, elseC) =>
       ifEqLSB(a, Seq(1), thenC, elseC)
 
+    case H.LetC(cnt, body) =>
+      L.LetC(cnt.map(x => new L.CntDef(x.name, x.args, transform(x.body))), transform(body))
+
+    case H.AppC(cnt, args) => L.AppC(cnt, args)
+
+    case H.LetL(name, IntLit(v), body) =>
+      L.LetL(name, 2 * v + 1, transform(body))
+
+    case H.LetF(funs, body) =>
+      L.LetF (
+        funs map (x => L.FunDef(x.name, x.retC, x.args, transform(x.body))),
+        transform(body)
+      )
+
+    case H.If(H.TestPrimitive("int?"), args, ct, cf) =>
+      ifEqLSB(args(0), Seq(1), ct, cf)
+
+    case H.If(CPSLt, args, ct, cf) => ???
+
     case _ => ??? // TODO Handle other cases
   }
 
