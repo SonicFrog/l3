@@ -26,6 +26,109 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
         tempLetL(1) { c1 =>
           L.LetP(name, CPSSub, Seq(r, c1), transform(body)) } }
 
+    case H.LetP(name, L3IntSub, args, body) =>
+      tempLetP(CPSSub, args) { r =>
+        tempLetL(1) { c1 =>
+          L.LetP(name, CPSAdd, Seq(r, c1), transform(body)) } }
+
+    case H.LetP(name, L3IntDiv, Seq(n1, n2), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, Seq(n1, c1)) { n1Rdy =>
+          tempLetP(CPSArithShiftR, Seq(n2, c1)) { n2Rdy =>
+            tempLetP(CPSDiv, Seq(n1Rdy, n2Rdy)) { r =>
+              L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } } }
+
+    case H.LetP(name, L3IntMul, Seq(n1, n2), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, Seq(n1, c1)) { n1Rdy =>
+          tempLetP(CPSArithShiftR, Seq(n2, c1)) { n2Rdy =>
+            tempLetP(CPSMul, Seq(n1Rdy, n2Rdy)) { r =>
+              L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } } }
+
+    case H.LetP(name, L3IntMod, Seq(n1, n2), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSArithShiftR, Seq(n1, c1)) { n1Rdy =>
+          tempLetP(CPSArithShiftR, Seq(n2, c1)) { n2Rdy =>
+            tempLetP(CPSMod, Seq(n1Rdy, n2Rdy)) { rNShift =>
+              tempLetP(CPSArithShiftL, Seq(rNShift, c1)) { r =>
+                L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } } } }
+
+    case H.LetP(name, L3IntArithShiftLeft, Seq(n, s), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, Seq(n, c1)) { nRdy =>
+          tempLetP(CPSArithShiftR, Seq(s, c1)) { sRdy =>
+            tempLetP(CPSArithShiftL, Seq(nRdy, sRdy)) { r =>
+                L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } } }
+
+    case H.LetP(name, L3IntArithShiftRight, Seq(n, s), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, Seq(n, c1)) { nRdy =>
+          tempLetP(CPSArithShiftR, Seq(s, c1)) { sRdy =>
+            tempLetP(CPSArithShiftR, Seq(nRdy, sRdy)) { r =>
+                L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } } }
+
+    case H.LetP(name, L3IntBitwiseAnd, args, body) =>
+      L.LetP(name, CPSAnd, args, transform(body))
+
+    case H.LetP(name, L3IntBitwiseOr, args, body) =>
+      L.LetP(name, CPSOr, args, transform(body))
+
+    case H.LetP(name, L3IntBitwiseXOr, args, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSXOr, args) { r =>
+          L.LetP(name, CPSAnd, Seq(r, c1), transform(body)) } }
+
+    case H.LetP(name, L3ByteRead, Nil, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSByteRead, Nil) { t1 =>
+          tempLetP(CPSArithShiftL, Seq(t1, c1)) { r =>
+            L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } }
+
+    case H.LetP(name, L3ByteWrite, Seq(n), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, Seq(n, c1)) { nPreRdy =>
+          tempLetP(CPSArithShiftR, Seq(nPreRdy, c1)) { r =>
+            L.LetP(name, CPSByteWrite, Seq(r), transform(body)) } } }
+
+    case H.LetP(name, L3IntToChar, Seq(n), body) =>
+      tempLetL(2) { c2 =>
+        tempLetP(CPSArithShiftL, Seq(n, c2)) { r =>
+          L.LetP(name, CPSOr, Seq(r, c2), transform(body)) } }
+
+    case H.LetP(name, L3CharToInt, Seq(n), body) =>
+      tempLetL(2) { c2 =>
+        L.LetP(name, CPSArithShiftR, Seq(n, c2), transform(body)) }
+
+    case H.LetP(name, L3Id, args, body) =>
+      L.LetP(name, CPSId, args, transform(body))
+
+    case H.LetP(name, L3BlockAlloc(tag), Seq(n), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSArithShiftR, Seq(n, c1)) { r => 
+          L.LetP(name, CPSBlockAlloc(tag), Seq(r), transform(body)) } }
+
+    case H.LetP(name, L3BlockTag, arg, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSBlockTag, arg) { read =>
+          tempLetP(CPSArithShiftL, Seq(read, c1)) { r => 
+            L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } }
+
+    case H.LetP(name, L3BlockLength, arg, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSBlockLength, arg) { len =>
+          tempLetP(CPSArithShiftL, Seq(len, c1)) { r =>
+            L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } }
+
+    case H.LetP(name, L3BlockGet, Seq(b, n), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSArithShiftR, Seq(n, c1)) { nRdy =>
+          L.LetP(name, CPSBlockGet, Seq(b, nRdy), transform(body)) } }
+
+    case H.LetP(name, L3BlockSet, Seq(b, n, v), body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSArithShiftR, Seq(n, c1)) { nRdy =>
+          L.LetP(name, CPSBlockSet, Seq(b, nRdy, v), transform(body)) } }
+
     case H.If(L3IntP, Seq(a), thenC, elseC) =>
       ifEqLSB(a, Seq(1), thenC, elseC)
 
@@ -64,8 +167,6 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
     case H.LetL(name, UnitLit, body) =>
       L.LetL(name, bitsToIntMSBF(0, 0, 1, 0), transform(body))
-
-    case _ => ??? // TODO Handle other cases
   }
 
   // Tree builders
