@@ -62,10 +62,9 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
     case H.LetP(name, L3IntArithShiftRight, Seq(n, s), body) =>
       tempLetL(1) { c1 =>
-        tempLetP(CPSSub, Seq(n, c1)) { nRdy =>
           tempLetP(CPSArithShiftR, Seq(s, c1)) { sRdy =>
             tempLetP(CPSArithShiftR, Seq(nRdy, sRdy)) { r =>
-                L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } } }
+                L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } }
 
     case H.LetP(name, L3IntBitwiseAnd, args, body) =>
       L.LetP(name, CPSAnd, args, transform(body))
@@ -76,7 +75,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.LetP(name, L3IntBitwiseXOr, args, body) =>
       tempLetL(1) { c1 =>
         tempLetP(CPSXOr, args) { r =>
-          L.LetP(name, CPSAnd, Seq(r, c1), transform(body)) } }
+          L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } }
 
     case H.LetP(name, L3ByteRead, Nil, body) =>
       tempLetL(1) { c1 =>
@@ -170,10 +169,10 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.If(L3UnitP, Seq(a), ct, cf) => ifEqLSB(a, Seq(0, 0, 1, 0), ct, cf)
     case H.If(L3BlockP, Seq(a), ct, cf) => ifEqLSB(a, Seq(0, 0), ct, cf)
 
-    case H.LetL(name, BooleanLit(true), body) =>
+    case H.LetL(name, BooleanLit(false), body) =>
       L.LetL(name, bitsToIntMSBF(1, 0, 1, 0), transform(body))
 
-    case H.LetL(name, BooleanLit(false), body) =>
+    case H.LetL(name, BooleanLit(true), body) =>
       L.LetL(name, bitsToIntMSBF(1, 1, 0, 1, 0), transform(body))
 
     case H.LetL(name, UnitLit, body) =>
