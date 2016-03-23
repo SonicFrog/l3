@@ -63,7 +63,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.LetP(name, L3IntArithShiftRight, Seq(n, s), body) =>
       tempLetL(1) { c1 =>
           tempLetP(CPSArithShiftR, Seq(s, c1)) { sRdy =>
-            tempLetP(CPSArithShiftR, Seq(nRdy, sRdy)) { r =>
+            tempLetP(CPSArithShiftR, Seq(n, sRdy)) { r =>
                 L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } }
 
     case H.LetP(name, L3IntBitwiseAnd, args, body) =>
