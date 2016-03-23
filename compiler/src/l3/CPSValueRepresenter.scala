@@ -138,7 +138,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.AppC(cnt, args) => L.AppC(cnt, args)
 
     case H.LetL(name, IntLit(v), body) =>
-      L.LetL(name, 2 * v + 1, transform(body))
+      L.LetL(name, (v << 1) | 1, transform(body))
 
     case H.LetF(funs, body) =>
       L.LetF (
@@ -148,7 +148,10 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
     case H.AppF(name, c, args) => L.AppF(name, c, args)
 
-    case H.Halt(name) => L.Halt(name)
+    case H.Halt(name) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSArithShiftR, Seq(name, c1)) { r =>
+          L.Halt(r) } }
 
     case H.If(L3IntLt, args, ct, cf) => L.If(CPSLt, args, ct, cf)
 
