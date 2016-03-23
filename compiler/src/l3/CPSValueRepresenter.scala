@@ -104,13 +104,13 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
     case H.LetP(name, L3BlockAlloc(tag), Seq(n), body) =>
       tempLetL(1) { c1 =>
-        tempLetP(CPSArithShiftR, Seq(n, c1)) { r => 
+        tempLetP(CPSArithShiftR, Seq(n, c1)) { r =>
           L.LetP(name, CPSBlockAlloc(tag), Seq(r), transform(body)) } }
 
     case H.LetP(name, L3BlockTag, arg, body) =>
       tempLetL(1) { c1 =>
         tempLetP(CPSBlockTag, arg) { read =>
-          tempLetP(CPSArithShiftL, Seq(read, c1)) { r => 
+          tempLetP(CPSArithShiftL, Seq(read, c1)) { r =>
             L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } } }
 
     case H.LetP(name, L3BlockLength, arg, body) =>
@@ -153,6 +153,10 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.If(L3IntGe, args, ct, cf) => L.If(CPSGe, args, ct, cf)
 
     case H.If(L3IntGt, args, ct, cf) => L.If(CPSGt, args, ct, cf)
+
+    case H.If(L3Eq, args, ct, cf) => L.If(CPSEq, args, ct, cf)
+
+    case H.If(L3Ne, args, ct, cf) => L.If(CPSNe, args, ct, cf)
 
     case H.If(L3CharP, Seq(a), ct, cf) => ifEqLSB(a, Seq(1, 1, 0), ct, cf)
     case H.If(L3BoolP, Seq(a), ct, cf) => ifEqLSB(a, Seq(1, 0, 1, 0), ct, cf)
