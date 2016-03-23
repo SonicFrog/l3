@@ -146,6 +146,8 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
         transform(body)
       )
 
+    case H.AppF(name, c, args) => L.AppF(name, c, args)
+
     case H.Halt(name) => L.Halt(name)
 
     case H.If(L3IntLt, args, ct, cf) => L.If(CPSLt, args, ct, cf)
