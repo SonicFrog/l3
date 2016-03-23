@@ -43,10 +43,27 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
         transform(body)
       )
 
-    case H.If(H.TestPrimitive("int?"), args, ct, cf) =>
-      ifEqLSB(args(0), Seq(1), ct, cf)
+    case H.If(L3IntLt, args, ct, cf) => L.If(CPSLt, args, ct, cf)
 
-    case H.If(CPSLt, args, ct, cf) => ???
+    case H.If(L3IntLe, args, ct, cf) => L.If(CPSLe, args, ct, cf)
+
+    case H.If(L3IntGe, args, ct, cf) => L.If(CPSGe, args, ct, cf)
+
+    case H.If(L3IntGt, args, ct, cf) => L.If(CPSGt, args, ct, cf)
+
+    case H.If(L3CharP, Seq(a), ct, cf) => ifEqLSB(a, Seq(1, 1, 0), ct, cf)
+    case H.If(L3BoolP, Seq(a), ct, cf) => ifEqLSB(a, Seq(1, 0, 1, 0), ct, cf)
+    case H.If(L3UnitP, Seq(a), ct, cf) => ifEqLSB(a, Seq(0, 0, 1, 0), ct, cf)
+    case H.If(L3BlockP, Seq(a), ct, cf) => ifEqLSB(a, Seq(0, 0), ct, cf)
+
+    case H.LetL(name, BooleanLit(true), body) =>
+      L.LetL(name, bitsToIntMSBF(1, 0, 1, 0), transform(body))
+
+    case H.LetL(name, BooleanLit(false), body) =>
+      L.LetL(name, bitsToIntMSBF(1, 1, 0, 1, 0), transform(body))
+
+    case H.LetL(name, UnitLit, body) =>
+      L.LetL(name, bitsToIntMSBF(0, 0, 1, 0), transform(body))
 
     case _ => ??? // TODO Handle other cases
   }
