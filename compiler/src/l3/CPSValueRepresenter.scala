@@ -29,7 +29,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.LetP(name, L3IntSub, args, body) =>
       tempLetP(CPSSub, args) { r =>
         tempLetL(1) { c1 =>
-          L.LetP(name, CPSAdd, Seq(r, c1), transform(body)) } }
+          L.LetP(name, CPSOr, Seq(r, c1), transform(body)) } }
 
     case H.LetP(name, L3IntDiv, Seq(n1, n2), body) =>
       tempLetL(1) { c1 =>
