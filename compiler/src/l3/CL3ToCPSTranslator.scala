@@ -84,6 +84,12 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
           C.LetP(v, p, l, ctx(v))
         })
       }
+
+      case S.Halt(arg) => {
+        nonTail(arg) { n =>
+          C.Halt(n)
+        }
+      }
     }
   }
 
