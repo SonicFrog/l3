@@ -180,7 +180,8 @@ class CPSInterpreterLow extends CPSInterpreter(SymbolicCPSTreeModuleLow)
       extends Value
   protected case class IntV(value: Int) extends Value
 
-  private var nextBlockAddr = 4
+  private var nextBlockAddr = 0
+
   private def allocBlock(tag: Int, contents: Array[Value]): BlockV = {
     val block = BlockV(nextBlockAddr, tag, contents)
     nextBlockAddr += 4
@@ -194,12 +195,8 @@ class CPSInterpreterLow extends CPSInterpreter(SymbolicCPSTreeModuleLow)
   }
 
 
-  protected def wrapFunV(funV: FunV): Value = BlockV(0, BlockTag.Function.id, Array(funV))
-  protected def unwrapFunV(v: Value): FunV = v match {
-    case BlockV(_, _, Array(funV: FunV)) => funV
-  }
-
-
+  protected def wrapFunV(funV: FunV): Value = funV
+  protected def unwrapFunV(v: Value): FunV = v.asInstanceOf[FunV]
 
   protected def evalLit(l: Literal): Value = IntV(l)
 
@@ -219,7 +216,8 @@ class CPSInterpreterLow extends CPSInterpreter(SymbolicCPSTreeModuleLow)
 
       case (CPSByteRead, Seq()) => IntV(readByte())
       case (CPSByteWrite, Seq(c)) => writeByte(c); IntV(0)
-      case (CPSBlockAlloc(t), Seq(IntV(v))) => allocBlock(t, Array.fill(v)(IntV(0)))
+
+      case (CPSBlockAlloc(t), Seq(s)) => allocBlock(t, Array.fill(s)(IntV(0)))
       case (CPSBlockTag, Seq(BlockV(_, t, _))) => IntV(t)
       case (CPSBlockLength, Seq(BlockV(_, _, c))) => IntV(c.length)
       case (CPSBlockGet, Seq(BlockV(_, _, c), i)) => c(i)
@@ -238,4 +236,3 @@ class CPSInterpreterLow extends CPSInterpreter(SymbolicCPSTreeModuleLow)
       case (CPSGt, Seq(v1, v2)) => v1 > v2
     }
 }
-

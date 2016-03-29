@@ -15,9 +15,9 @@ import l3.{ SymbolicCPSTreeModuleLow => L }
 
 object CPSValueRepresenter extends (H.Tree => L.Tree) {
   def apply(tree: H.Tree): L.Tree =
-    transform(tree)
+    transform(tree)(Map.empty)
 
-  private def transform(tree: H.Tree): L.Tree = tree match {
+  private def transform(tree: H.Tree)(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]): L.Tree = tree match {
     case H.LetL(name, CharLit(value), body) =>
       L.LetL(name, (value << 3) | bitsToIntMSBF(1, 1, 0), transform(body))
 
@@ -177,6 +177,11 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
     case H.LetL(name, UnitLit, body) =>
       L.LetL(name, bitsToIntMSBF(0, 0, 1, 0), transform(body))
+
+    case H.If(L3IntP, Seq(a), thenC, elseC) =>
+      ifEqLSB(a, Seq(1), thenC, elseC)
+
+    case _ => ??? // TODO Handle other cases
   }
 
   // Tree builders
