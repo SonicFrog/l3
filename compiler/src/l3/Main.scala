@@ -17,15 +17,15 @@ object Main extends MainHelper {
           val backEnd = (
             CL3NameAnalyzer
               andThen treePrinter("Tree in CL3")
-              andThen CL3ToCPSTranslator
+              andThen reference.CL3ToCPSTranslator
               andThen CPSOptimizerHigh
               andThen treePrinter("Tree in CPS")
               andThen passThrough(SymbolicCPSTreeChecker)
-              andThen CPSValueRepresenter
+              andThen reference.CPSValueRepresenter
               andThen CPSOptimizerLow
               andThen treePrinter("Tree in CPS-low")
               andThen passThrough(SymbolicCPSTreeLowChecker)
-              andThen CPSHoister
+              andThen reference.CPSHoister
               andThen (new CPSInterpreterLowWithStats(showStats = true))
           )
           try {

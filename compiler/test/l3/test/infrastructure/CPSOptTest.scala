@@ -34,10 +34,10 @@ class CPSOptTest extends CPSLowTest with MainHelper {
   def testCPSOptTreeEquality(source: String, expectedTree: String) = {
     val pipeline =
       () => (CL3NameAnalyzer
-             andThen CL3ToCPSTranslator
+             andThen reference.CL3ToCPSTranslator
              andThen CPSOptimizerHigh
-             andThen CPSValueRepresenter
-             andThen CPSHoister
+             andThen reference.CPSValueRepresenter
+             andThen reference.CPSHoister
              andThen CPSOptimizerLow
              andThen CPSVariableRenamePhase
              andThen TreeToString)
@@ -52,10 +52,10 @@ class CPSOptTest extends CPSLowTest with MainHelper {
     var interpreter: CPSInterpreterLowWithStats = null
     val pipeline =
       () => (CL3NameAnalyzer
-             andThen CL3ToCPSTranslator
+             andThen reference.CL3ToCPSTranslator
              andThen opt(earlyOpt, treePrinter("Before early optimization")(SymbolicCPSTreeFormatter) andThen CPSOptimizerHigh andThen treePrinter("After early optimization"))
-             andThen CPSValueRepresenter
-             andThen CPSHoister
+             andThen reference.CPSValueRepresenter
+             andThen reference.CPSHoister
              andThen opt(lateOpt, treePrinter("Before late optimization")(SymbolicCPSTreeLowFormatter) andThen CPSOptimizerLow andThen treePrinter("After late optimization"))
              andThen treePrinter("Interpreted Tree")(SymbolicCPSTreeLowFormatter)
              andThen { interpreter = new CPSInterpreterLowWithStats(showStats = false); interpreter })
@@ -84,10 +84,10 @@ class CPSOptTest extends CPSLowTest with MainHelper {
   override def testCPSLowProgramOutput(source: String, input: String = "", expectedOutput: String = "OK") = {
     val pipeline =
       () => (CL3NameAnalyzer
-             andThen CL3ToCPSTranslator
+             andThen reference.CL3ToCPSTranslator
              andThen CPSOptimizerHigh
-             andThen CPSValueRepresenter
-             andThen CPSHoister
+             andThen reference.CPSValueRepresenter
+             andThen reference.CPSHoister
              andThen CPSOptimizerLow
              andThen CPSHoistChecker
              andThen CPSInterpreterLow)

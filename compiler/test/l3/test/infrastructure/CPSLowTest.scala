@@ -18,9 +18,9 @@ class CPSLowTest extends CPSTest(SymbolicCPSTreeModuleLow) {
   def testCPSLowTreeEquality(source: String, expectedTree: String) = {
     val pipeline =
       () => (CL3NameAnalyzer
-             andThen CL3ToCPSTranslator
-             andThen CPSValueRepresenter
-             andThen CPSHoister
+             andThen reference.CL3ToCPSTranslator
+             andThen reference.CPSValueRepresenter
+             andThen reference.CPSHoister
              andThen CPSVariableRenamePhase
              andThen TreeToString)
     val generatedTree = compileUsingPipeline(() => source, pipeline)
@@ -34,9 +34,9 @@ class CPSLowTest extends CPSTest(SymbolicCPSTreeModuleLow) {
   def testCPSLowProgramOutput(source: String, input: String = "", expectedOutput: String = "OK") = {
     val pipeline =
       () => (CL3NameAnalyzer
-             andThen CL3ToCPSTranslator
-             andThen CPSValueRepresenter
-             andThen CPSHoister
+             andThen reference.CL3ToCPSTranslator
+             andThen reference.CPSValueRepresenter
+             andThen reference.CPSHoister
              andThen CPSHoistChecker
              andThen CPSInterpreterLow)
     val output = compileUsingPipelineAndRedirect(() => source, pipeline, input)
