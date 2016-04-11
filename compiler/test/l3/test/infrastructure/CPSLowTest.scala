@@ -20,6 +20,7 @@ class CPSLowTest extends CPSTest(SymbolicCPSTreeModuleLow) {
       () => (CL3NameAnalyzer
              andThen CL3ToCPSTranslator
              andThen CPSValueRepresenter
+             andThen CPSHoister
              andThen CPSVariableRenamePhase
              andThen TreeToString)
     val generatedTree = compileUsingPipeline(() => source, pipeline)
@@ -35,9 +36,54 @@ class CPSLowTest extends CPSTest(SymbolicCPSTreeModuleLow) {
       () => (CL3NameAnalyzer
              andThen CL3ToCPSTranslator
              andThen CPSValueRepresenter
+             andThen CPSHoister
+             andThen CPSHoistChecker
              andThen CPSInterpreterLow)
     val output = compileUsingPipelineAndRedirect(() => source, pipeline, input)
     assertEqual(source, input, output, expectedOutput)
+  }
+
+  object CPSHoistChecker extends (CPS.Tree => CPS.Tree) {
+    import CPS._
+
+    // entry point
+    def apply(tree: Tree): Tree = {
+      visitTree(tree, mayBeLetF = true)
+      tree
+    }
+
+    // tree traversal logic
+    private[this] def visitTree(tree: Tree, mayBeLetF: Boolean = false): Unit = tree match {
+      case LetL(name, literal, body) =>
+        visitTree(body)
+      case LetP(name, prim, args, body) =>
+        visitTree(body)
+      case LetC(cnts, body) =>
+        cnts.foreach(visitContinuation)
+        visitTrees(body)
+      case LetF(functions, body) =>
+        assert(mayBeLetF, "You haven't performed the LetF hoisting: Only one LetF should appear as the tree root.")
+        functions.foreach(visitFunction)
+        visitTree(body)
+      case _ =>
+        ()
+    }
+
+    // Multiple tree traversal
+    private[this] def visitTrees(trees: Tree*): Unit =
+      trees.foreach(visitTree(_))
+
+    // FunDef traversal
+    private[this] def visitContinuation(cntDef: CntDef): Unit = cntDef match {
+      case CntDef(name, args, body) =>
+        visitTree(body)
+    }
+
+    // FunDef traversal
+    private[this] def visitFunction(funDef: FunDef): Unit = funDef match {
+      case FunDef(name, retK, args, body) =>
+        visitTree(body)
+    }
   }
 
 }

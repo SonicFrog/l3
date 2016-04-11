@@ -235,3 +235,84 @@ class CPSInterpreterLow extends CPSInterpreter(SymbolicCPSTreeModuleLow)
     }
 }
 
+class CPSInterpreterLowWithStats(showStats: Boolean) extends CPSInterpreterLow {
+
+  import SymbolicCPSTreeModuleLow._
+
+  val stats = new Statistics()
+
+  override def statistics(tree: Tree): Unit = {
+    stats.inc(tree.getClass())
+    tree match {
+      case LetP(_, prim, _, _) =>
+        stats.inc(prim.getClass())
+      case LetF(funs, _) =>
+        stats.incFuncs(funs.length)
+      case LetC(conts, _) =>
+        stats.incConts(conts.length)
+      case If(cond, _, _, _) =>
+        stats.inc(cond.getClass())
+      case Halt(_) =>
+        if (showStats) stats.print()
+      case _ =>
+    }
+  }
+}
+
+class Statistics {
+  import scala.collection.mutable.Map
+  import Statistics._
+
+  private[this] var funcs = 0
+  private[this] var conts = 0
+  private[this] val insts = Map[Class[_ <: l3.CPSTreeModule#Tree], Int]()
+  private[this] val lprims = Map[Class[_ <: l3.CPSTestPrimitive], Int]()
+  private[this] val vprims = Map[Class[_ <: l3.CPSValuePrimitive], Int]()
+  private[this] def m_inc[T](map: Map[T, Int], cls: T): Unit = map += cls -> (m_get(map, cls) + 1)
+  private[this] def m_get[T](map: Map[T, Int], cls: T): Int =  map.getOrElse(cls, 0)
+
+  def inc(cls: Class[_ <: l3.CPSTreeModule#Tree])(implicit ov: OverloadHack1.type) = m_inc(insts, cls)
+  def inc(cls: Class[_ <: l3.CPSTestPrimitive])(implicit ov: OverloadHack2.type)   = m_inc(lprims, cls)
+  def inc(cls: Class[_ <: l3.CPSValuePrimitive])(implicit ov: OverloadHack3.type)  = m_inc(vprims, cls)
+  def get(cls: Class[_ <: l3.CPSTreeModule#Tree])(implicit ov: OverloadHack1.type) = m_get(insts, cls)
+  def get(cls: Class[_ <: l3.CPSTestPrimitive])(implicit ov: OverloadHack2.type)   = m_get(lprims, cls)
+  def get(cls: Class[_ <: l3.CPSValuePrimitive])(implicit ov: OverloadHack3.type)  = m_get(vprims, cls)
+
+  def incFuncs(incr: Int) = funcs += incr
+  def incConts(incr: Int) = conts += incr
+  def getFuncs = funcs
+  def getConts = conts
+
+  def print() =
+    println(toString)
+
+  override def toString: String = {
+    def append(label: String, vals: Map[_ <: Class[_], Int], sb: StringBuffer) =
+      if (!vals.isEmpty) {
+        sb.append(label + "\n" + "=" * label.length + "\n")
+        for ((occ, prim) <- vals.toList.map(p => (p._2, p._1.getSimpleName())).sortBy(-_._1))
+          sb.append("%8d  %s\n".format(occ, prim))
+        sb.append("\n")
+      }
+
+    // Create stats
+    val sb = new StringBuffer()
+    append("Instruction Stats", insts, sb)
+    append("Value Primitives Stats", vprims, sb)
+    append("Logic Primitives Stats", lprims, sb)
+
+    sb.append("Functions defined: " + getFuncs + "\n")
+    sb.append("Continuations defined: " + getConts + "\n")
+    sb.toString
+  }
+}
+
+object Statistics {
+  /* We need to do overloading with methods that
+   * have the exact same signature after erasure,
+   * so we add an implicit OverloadHack parameter */
+  implicit object OverloadHack1
+  implicit object OverloadHack2
+  implicit object OverloadHack3
+}
+
