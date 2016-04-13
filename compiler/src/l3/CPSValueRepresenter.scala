@@ -207,6 +207,25 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     F(tree).toSeq
   }
 
+  private def transfun(fun : H.FunDef, fv : Seq[H.Name]) : L.FunDef = {
+    val H.FunDef(name, rc, args, body) = fun
+    val fname = Symbol.fresh("w")
+    val env = Symbol.fresh("env")
+    val fargs =  env +: args
+    val (sub, names) = fv.foldRight((Substitution.empty + (name, fname), Seq[H.Name]()))((x, y) => {
+      val fresh = Symbol.fresh("v")
+      (y._1 + (x, fresh), y._2 :+ fresh)
+    })
+    val fbody = fromClosure(names, env, body.subst(sub))
+
+    L.FunDef(fname, rc, fargs, fbody)
+  }
+
+  private def fromClosure(vars : Seq[H .Name], env : H.Name, body : H.Tree) : L.Tree = {
+    ???
+  }
+
+
   // Tree builders
 
   /**
