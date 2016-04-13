@@ -227,7 +227,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     F(tree).toSeq
   }
 
-  private def transfun(fun : H.FunDef, fv : Seq[H.Name]) : L.FunDef = {
+  private def transfun(fun : H.FunDef, fv : Seq[H.Name])(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]) : L.FunDef = {
     val H.FunDef(name, rc, args, body) = fun
     val fname = Symbol.fresh("w")
     val env = Symbol.fresh("env")
@@ -236,13 +236,15 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       val fresh = Symbol.fresh("v")
       (y._1 + (x, fresh), y._2 :+ fresh)
     })
-    val fbody = fromClosure(names, env, body.subst(sub))
+    val fbody = fromClosure(fname, names, env, body.subst(sub))
 
     L.FunDef(fname, rc, fargs, fbody)
   }
 
-  private def fromClosure(vars : Seq[H .Name], env : H.Name, body : H.Tree) : L.Tree = {
-    ???
+  private def fromClosure(fname : L.Name, vars : Seq[H .Name], env : H.Name, body : H.Tree)(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]) : L.Tree = {
+    (fname +: vars).zipWithIndex.foldRight(transform(body))((x, inner) => {
+      tempLetL(x._2)(n => L.LetP(x._1, CPSBlockGet, Seq(env, n), inner))
+    })
   }
 
 
