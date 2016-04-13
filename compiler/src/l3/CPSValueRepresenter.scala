@@ -184,6 +184,26 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case _ => ??? // TODO Handle other cases
   }
 
+  private def bolocksAlloc(fun: H.FunDef, w1: H.Name, freeV: Seq[H.Name],
+      letFBody: H.Tree)(implicit
+      worker: Map[Symbol, (Symbol, Seq[Symbol])]): L.Tree = {
+    val f1 = fun.name
+
+    def letArgs(freeVars: Seq[H.Name], idx: Int = 0): L.Tree = {
+      tempLetL(idx){ index =>
+        freeVars match {
+          case Seq(tLast) =>
+            tempLetP(CPSBlockSet, Seq(f1, index, tLast))(ti => transform(letFBody))
+          case Seq(tCurr, tail@_*) =>
+            tempLetP(CPSBlockSet, Seq(f1, index, tCurr)){ti => letArgs(tail)}
+        }
+      }
+    }
+
+    tempLetL(freeV.size + 1){ sz =>
+      L.LetP(f1, CPSBlockAlloc(202), Seq(sz), letArgs(freeV.+:(w1)))}
+  }
+
   private def freeVars(tree : H.Tree) : Seq[H.Name] = {
     def F(tree : H.Tree) : Set[H.Name] = tree match {
       case H.LetL(name, _, e) => F(e) - name
