@@ -3,6 +3,7 @@ package l3
 import BitTwiddling.bitsToIntMSBF
 import l3.{ SymbolicCPSTreeModule => H }
 import l3.{ SymbolicCPSTreeModuleLow => L }
+import java.io.PrintWriter
 
 /**
   * Value-representation phase for the CPS language. Translates a tree
@@ -147,7 +148,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
         val fargs =  env +: args
         val fv = funFV(fun)
         val (sub, names) = fv.foldRight((Substitution.empty + (name, fname), Seq[H.Name]()))((x, y) => {
-          val fresh = Symbol.fresh("v")
+          val fresh = Symbol.fresh(s"fresh$x")
           (y._1 + (x, fresh), y._2 :+ fresh)
         })
 
@@ -156,8 +157,16 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
       val fvs = newfuns.map(x => (x._1.name, x._2)).toMap
       val defs = newfuns.map(_._1)
+      val fsubst = Substitution(funs.map(_.name), defs.map(_.name))
 
-      L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, body))
+      val nletfbody = body subst fsubst
+
+      val l = L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, nletfbody))
+      val writer = new PrintWriter(System.err)
+      new CPSTreeFormatter(L).toDocument(l).format(80, writer)
+      writer.println()
+      writer.flush()
+      l
 
     case H.AppF(name, c, args) => L.AppF(name, c, args)
 
