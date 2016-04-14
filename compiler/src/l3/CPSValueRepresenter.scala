@@ -170,8 +170,10 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, nletfbody))
 
 
-    case H.AppF(name, c, args) => tempLetL(0)(c =>
-      tempLetP(CPSBlockGet, Seq(args(0), c)){ f => L.AppF(f, c, args) })
+    case H.AppF(name, c, args) =>
+      tempLetL(0){c0 =>
+        tempLetP(CPSBlockGet, Seq(name, c0)){ f =>
+          L.AppF(f, c, name +: args)}}
 
     case H.Halt(name) =>
       tempLetL(1) { c1 =>
@@ -226,7 +228,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       }
 
       tempLetL(freeVar.size + 1){ sz =>
-        L.LetP(fn, CPSBlockAlloc(202), Seq(sz), letArgs(freeVar.+:(wn)))}
+        L.LetP(fn, CPSBlockAlloc(202), Seq(sz), letArgs(wn +: freeVar))}
     }
     fun.foldRight(transform(letFBody)){
       case ((fDef, fName), body) =>
@@ -263,8 +265,8 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
   private def fromClosure(fname : L.Name, vars : Seq[H .Name], env : H.Name,
     body : H.Tree)(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]) : L.Tree = {
-    (fname +: vars).zipWithIndex.foldRight(transform(body))((x, inner) => {
-      tempLetL(x._2)(n => L.LetP(x._1, CPSBlockGet, Seq(env, n), inner))
+    vars.zipWithIndex.foldRight(transform(body))((x, inner) => {
+      tempLetL(x._2 + 1)(n => L.LetP(x._1, CPSBlockGet, Seq(env, n), inner))
     })
   }
 
