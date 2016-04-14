@@ -154,7 +154,10 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
         (L.FunDef(fname, rc, fargs, fromClosure(fname, names, env, fbody.subst(sub))), fv)
       }
 
-      L.LetF(newfuns.map(_._1), bolocksAlloc(newfuns, ???, ???))
+      val fvs = newfuns.map(x => (x._1.name, x._2)).toMap
+      val defs = newfuns.map(_._1)
+
+      L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, body))
 
     case H.AppF(name, c, args) => L.AppF(name, c, args)
 
