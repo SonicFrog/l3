@@ -9,7 +9,6 @@ import org.junit.Test
 class CPSValueRepresentation_Blackbox extends CPSLowTest with AllOKTests {
 
   val compileAndInterpret = (src: String) => testCPSLowProgramOutput(source = src)
-  // TODO: Add other specific tests here
 
   @Test def testMakePrinter = compileAndInterpret("""
      (def make-printer (fun (x)
@@ -42,7 +41,8 @@ class CPSValueRepresentation_Blackbox extends CPSLowTest with AllOKTests {
     (def increment (make-adder 1))
 
     (if (@= (increment 41) 42)
-          (begin (@byte-write (@char->int 'O'))
+          (begin
+           (@byte-write (@char->int 'O'))
            (@byte-write (@char->int 'K'))))
   """)
 
@@ -57,5 +57,13 @@ class CPSValueRepresentation_Blackbox extends CPSLowTest with AllOKTests {
            (begin
             (@byte-write (@char->int 'O'))
             (@byte-write (@char->int 'K'))))
+  """)
+
+  @Test def testCorrectFreeVars = compileAndInterpret("""
+     (let* ((x (@char->int 'K')))
+           (let ((f (fun (x)
+                   (fun () (@byte-write (@char->int x))))))
+              ((f 'O'))
+              (@byte-write x)))
   """)
 }
