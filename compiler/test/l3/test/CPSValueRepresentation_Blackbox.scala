@@ -34,4 +34,28 @@ class CPSValueRepresentation_Blackbox extends CPSLowTest with AllOKTests {
                        (@byte-write (@char->int y)))))
                    (f)))
   """)
+
+  @Test def testMakeAdder = compileAndInterpret("""
+    (def make-adder
+      (fun (x)
+       (fun (y) (@+ x y))))
+    (def increment (make-adder 1))
+
+    (if (@= (increment 41) 42)
+          (begin (@byte-write (@char->int 'O'))
+           (@byte-write (@char->int 'K'))))
+  """)
+
+  @Test def testComposeFuns = compileAndInterpret("""
+     (def compose
+        (fun (f g)
+          (fun (x) (f (g x)))))
+
+     (def square (fun (x) (@* x x)))
+
+     (if (@=((compose square square) 5) 625)
+           (begin
+            (@byte-write (@char->int 'O'))
+            (@byte-write (@char->int 'K'))))
+  """)
 }
