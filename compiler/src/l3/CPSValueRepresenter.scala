@@ -140,10 +140,22 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       L.LetL(name, (v << 1) | 1, transform(body))
 
     case H.LetF(funs, body) =>
-      L.LetF (
-        funs map (x => L.FunDef(x.name, x.retC, x.args, transform(x.body))),
-        transform(body)
-      )
+      val newfuns = funs map { fun =>
+        val H.FunDef(name, rc, args, body) = fun
+        val fname = Symbol.fresh("w")
+        val env = Symbol.fresh("env")
+        val fargs =  env +: args
+        val fv = funFV(fun)
+        val (sub, names) = fv.foldRight((Substitution.empty + (name, fname), Seq[H.Name]()))((x, y) => {
+          val fresh = Symbol.fresh("v")
+          (y._1 + (x, fresh), y._2 :+ fresh)
+        })
+        val fbody = fromClosure(fname, names, env, body.subst(sub))
+
+        L.FunDef(fname, rc, fargs, fbody)
+      }
+
+      L.LetF(newfuns, ???)
 
     case H.AppF(name, c, args) => L.AppF(name, c, args)
 
@@ -232,21 +244,12 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     F(tree).toSeq
   }
 
-  private def transfun(fun : H.FunDef, fv : Seq[H.Name])(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]) : L.FunDef = {
-    val H.FunDef(name, rc, args, body) = fun
-    val fname = Symbol.fresh("w")
-    val env = Symbol.fresh("env")
-    val fargs =  env +: args
-    val (sub, names) = fv.foldRight((Substitution.empty + (name, fname), Seq[H.Name]()))((x, y) => {
-      val fresh = Symbol.fresh("v")
-      (y._1 + (x, fresh), y._2 :+ fresh)
-    })
-    val fbody = fromClosure(fname, names, env, body.subst(sub))
-
-    L.FunDef(fname, rc, fargs, fbody)
+  private def funFV(fun : H.FunDef) : Seq[H.Name] = {
+    (freeVars(fun.body).toSet -- fun.args).toSeq
   }
 
-  private def fromClosure(fname : L.Name, vars : Seq[H .Name], env : H.Name, body : H.Tree)(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]) : L.Tree = {
+  private def fromClosure(fname : L.Name, vars : Seq[H .Name], env : H.Name,
+    body : H.Tree)(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]) : L.Tree = {
     (fname +: vars).zipWithIndex.foldRight(transform(body))((x, inner) => {
       tempLetL(x._2)(n => L.LetP(x._1, CPSBlockGet, Seq(env, n), inner))
     })
