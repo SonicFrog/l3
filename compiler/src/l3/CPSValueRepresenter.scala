@@ -15,8 +15,14 @@ import java.io.PrintWriter
   */
 
 object CPSValueRepresenter extends (H.Tree => L.Tree) {
-  def apply(tree: H.Tree): L.Tree =
-    transform(tree)(Map.empty)
+  def apply(tree: H.Tree): L.Tree = {
+    val t = transform(tree)(Map.empty)
+    val writer = new PrintWriter(System.err)
+    new CPSTreeFormatter(L).toDocument(t).format(80, writer)
+    writer.println()
+    writer.flush()
+    t
+  }
 
   private def transform(tree: H.Tree)(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]): L.Tree = tree match {
     case H.LetL(name, CharLit(value), body) =>
@@ -161,12 +167,8 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
       val nletfbody = body subst fsubst
 
-      val l = L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, nletfbody))
-      val writer = new PrintWriter(System.err)
-      new CPSTreeFormatter(L).toDocument(l).format(80, writer)
-      writer.println()
-      writer.flush()
-      l
+      L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, nletfbody))
+
 
     case H.AppF(name, c, args) => L.AppF(name, c, args)
 
@@ -208,11 +210,11 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
   }
 
   private def bolocksAlloc(fun: Seq[(H.FunDef, L.Name)], freeV: Map[L.Name, Seq[H.Name]],
-      letFBody: H.Tree)(implicit
+    letFBody: H.Tree)(implicit
       worker: Map[Symbol, (Symbol, Seq[Symbol])]): L.Tree = {
 
     def letAlloc(fn: H.Name, wn: L.Name, freeVar: Seq[H.Name],
-        cont: L.Tree): L.Tree = {
+      cont: L.Tree): L.Tree = {
 
       def letArgs(freeVars: Seq[H.Name]): L.Tree = {
         freeVars.zipWithIndex.foldRight(cont){
