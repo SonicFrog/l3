@@ -184,34 +184,28 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case _ => ??? // TODO Handle other cases
   }
 
-  private def bolocksAlloc(fun: Seq[(H.FunDef, H.Name)], freeV: Map[H.Name, Seq[H.Name]],
+  private def bolocksAlloc(fun: Seq[(H.FunDef, L.Name)], freeV: Map[L.Name, Seq[H.Name]],
       letFBody: H.Tree)(implicit
       worker: Map[Symbol, (Symbol, Seq[Symbol])]): L.Tree = {
 
-    def letAlloc(fn: H.Name, wn: H.Name, freeVar: Seq[H.Name],
+    def letAlloc(fn: H.Name, wn: L.Name, freeVar: Seq[H.Name],
         cont: L.Tree): L.Tree = {
 
-      def letArgs(freeVars: Seq[H.Name], idx: Int = 0): L.Tree = {
-        tempLetL(idx){ index =>
-          freeVars match {
-            case Seq(tLast) =>
-              tempLetP(CPSBlockSet, Seq(fn, index, tLast))(ti => cont)
-            case Seq(tCurr, tail@_*) =>
-              tempLetP(CPSBlockSet, Seq(fn, index, tCurr)){ti => letArgs(tail)}
-          }
+      def letArgs(freeVars: Seq[H.Name]): L.Tree = {
+        freeVars.zipWithIndex.foldRight(cont){
+          case ((tn, idx), body) =>
+            tempLetL(idx){ index =>
+              tempLetP(CPSBlockSet, Seq(fn, index, tn))(ti => body)}
         }
       }
 
       tempLetL(freeVar.size + 1){ sz =>
         L.LetP(fn, CPSBlockAlloc(202), Seq(sz), letArgs(freeVar.+:(wn)))}
     }
-    
-    fun match {
-      case Seq((lastDef, wn))           =>
-        letAlloc(lastDef.name, wn, freeV(wn), transform(letFBody))
-      case Seq((firstDef, wn), tail@_*) =>
-        letAlloc(firstDef.name, wn, freeV(wn), bolocksAlloc(tail, freeV, letFBody))
 
+    fun.foldRight(transform(letFBody)){
+      case ((fDef, fName), body) =>
+        letAlloc(fDef.name, fName, freeV(fName), body)
     }
   }
 
