@@ -170,7 +170,8 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, nletfbody))
 
 
-    case H.AppF(name, c, args) => L.AppF(name, c, args)
+    case H.AppF(name, c, args) => tempLetL(0)(c =>
+      tempLetP(CPSBlockGet, Seq(args(0), c)){ f => L.AppF(f, c, args) })
 
     case H.Halt(name) =>
       tempLetL(1) { c1 =>
@@ -238,7 +239,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       case H.LetL(name, _, e) => F(e) - name
       case H.LetP(name, _, args, e) => (F(e) - name) union args.toSet
       case H.LetC(cnts, e) => F(e) union (cnts.map(contFV).fold(Set())(_ union _))
-      case H.LetF(funs, e) => F(e) union (funs.map(funFV).fold(Set())(_ union _))
+      case H.LetF(funs, e) => (F(e) union (funs.map(funFV).fold(Set())(_ union _))) -- funs.map(_.name)
       case H.AppC(_, args) => args.toSet
       case H.AppF(fun, _, args) => args.toSet
       case H.If(_, args, _, _) => args.toSet
