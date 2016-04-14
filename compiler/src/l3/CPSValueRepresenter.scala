@@ -141,7 +141,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
     case H.LetF(funs, body) =>
       val newfuns = funs map { fun =>
-        val H.FunDef(name, rc, args, body) = fun
+        val H.FunDef(name, rc, args, fbody) = fun
         val fname = Symbol.fresh("w")
         val env = Symbol.fresh("env")
         val fargs =  env +: args
@@ -150,12 +150,11 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
           val fresh = Symbol.fresh("v")
           (y._1 + (x, fresh), y._2 :+ fresh)
         })
-        val fbody = fromClosure(fname, names, env, body.subst(sub))
 
-        L.FunDef(fname, rc, fargs, fbody)
+        (L.FunDef(fname, rc, fargs, fromClosure(fname, names, env, fbody.subst(sub))), fv)
       }
 
-      L.LetF(newfuns, ???)
+      L.LetF(newfuns.map(_._1), bolocksAlloc(newfuns, ???, ???))
 
     case H.AppF(name, c, args) => L.AppF(name, c, args)
 
@@ -196,14 +195,14 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case _ => ??? // TODO Handle other cases
   }
 
-  private def bolocksAlloc(fun: Seq[(H.FunDef, H.Name)], freeV: Map[H.Name, Seq[H.Name]],
+  private def bolocksAlloc(fun: Seq[(L.FunDef, L.Name)], freeV: Map[L.Name, Seq[L.Name]],
       letFBody: H.Tree)(implicit
       worker: Map[Symbol, (Symbol, Seq[Symbol])]): L.Tree = {
 
-    def letAlloc(fn: H.Name, wn: H.Name, freeVar: Seq[H.Name],
+    def letAlloc(fn: L.Name, wn: L.Name, freeVar: Seq[L.Name],
         cont: L.Tree): L.Tree = {
 
-      def letArgs(freeVars: Seq[H.Name], idx: Int = 0): L.Tree = {
+      def letArgs(freeVars: Seq[L.Name], idx: Int = 0): L.Tree = {
         tempLetL(idx){ index =>
           freeVars match {
             case Seq(tLast) =>
@@ -217,7 +216,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       tempLetL(freeVar.size + 1){ sz =>
         L.LetP(fn, CPSBlockAlloc(202), Seq(sz), letArgs(freeVar.+:(wn)))}
     }
-    
+
     fun match {
       case Seq((lastDef, wn))           =>
         letAlloc(lastDef.name, wn, freeV(wn), transform(letFBody))
