@@ -15,6 +15,9 @@ import java.io.PrintWriter
   */
 
 object CPSValueRepresenter extends (H.Tree => L.Tree) {
+
+  private var closureMap : Map[H.Name, L.Name] = Map() // mapping from old names to closure names
+
   def apply(tree: H.Tree): L.Tree = {
     val t = transform(tree)(Map.empty)
     val writer = new PrintWriter(System.err)
@@ -149,13 +152,13 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
     case H.LetF(funs, body) =>
       val newfuns = funs map { fun =>
         val H.FunDef(name, rc, args, fbody) = fun
-        val fname = Symbol.fresh("w")
+        val fname = Symbol.fresh("newfun")
         val env = Symbol.fresh("env")
         val fargs =  env +: args
         val fv = funFV(fun)
-        val (sub, names) = fv.foldRight((Substitution.empty + (name, fname), Seq[H.Name]()))((x, y) => {
-          val fresh = Symbol.fresh(s"fresh$x")
-          (y._1 + (x, fresh), y._2 :+ fresh)
+        val (sub, names) = fv.foldRight((Substitution.empty + (name, env), Seq[H.Name]()))((x, y) => {
+          val fresh = Symbol.fresh("a")
+          (y._1 + (x, fresh), fresh +: y._2)
         })
 
         (L.FunDef(fname, rc, fargs, fromClosure(fname, names, env, fbody.subst(sub))), fv)
@@ -163,11 +166,8 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
 
       val fvs = newfuns.map(x => (x._1.name, x._2)).toMap
       val defs = newfuns.map(_._1)
-      val fsubst = Substitution(funs.map(_.name), defs.map(_.name))
 
-      val nletfbody = body subst fsubst
-
-      L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, nletfbody))
+      L.LetF(defs, bolocksAlloc(funs.zip(defs.map(_.name)), fvs, body))
 
 
     case H.AppF(name, c, args) =>

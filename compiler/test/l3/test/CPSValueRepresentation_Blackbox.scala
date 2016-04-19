@@ -56,7 +56,8 @@ class CPSValueRepresentation_Blackbox extends CPSLowTest with AllOKTests {
      (if (@=((compose square square) 5) 625)
            (begin
             (@byte-write (@char->int 'O'))
-            (@byte-write (@char->int 'K'))))
+            (@byte-write (@char->int 'K'))
+            (@byte-write 10)))
   """)
 
   @Test def testCorrectFreeVars = compileAndInterpret("""
@@ -64,6 +65,15 @@ class CPSValueRepresentation_Blackbox extends CPSLowTest with AllOKTests {
            (let ((f (fun (x)
                    (fun () (@byte-write (@char->int x))))))
               ((f 'O'))
-              (@byte-write x)))
+              (@byte-write x)
+              (@byte-write 10)))
+  """)
+
+  @Test def testSimpleClosure = compileAndInterpret("""
+    (let* ((x 'O')
+           (y 'K')
+           (f (fun () (@byte-write (@char->int x))
+                      (@byte-write (@char->int y)))))
+           (f))
   """)
 }
