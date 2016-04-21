@@ -238,7 +238,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
       case H.LetC(cnts, e) => F(e) union (cnts.map(contFV).fold(Set())(_ union _))
       case H.LetF(funs, e) => (F(e) union (funs.map(funFV).fold(Set())(_ union _))) -- funs.map(_.name)
       case H.AppC(_, args) => args.toSet
-      case H.AppF(fun, _, args) => args.toSet
+      case H.AppF(funName, _, args) => args.toSet + funName
       case H.If(_, args, _, _) => args.toSet
       case H.Halt(arg) => Set(arg)
     }
