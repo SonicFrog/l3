@@ -19,12 +19,7 @@ object CPSValueRepresenter extends (H.Tree => L.Tree) {
   private var closureMap : Map[H.Name, L.Name] = Map() // mapping from old names to closure names
 
   def apply(tree: H.Tree): L.Tree = {
-    val t = transform(tree)(Map.empty)
-    val writer = new PrintWriter(System.err)
-    new CPSTreeFormatter(L).toDocument(t).format(80, writer)
-    writer.println()
-    writer.flush()
-    t
+    transform(tree)(Map.empty)
   }
 
   private def transform(tree: H.Tree)(implicit worker: Map[Symbol, (Symbol, Seq[Symbol])]): L.Tree = tree match {

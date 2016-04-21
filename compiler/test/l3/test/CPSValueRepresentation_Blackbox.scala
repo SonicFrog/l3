@@ -76,4 +76,13 @@ class CPSValueRepresentation_Blackbox extends CPSLowTest with AllOKTests {
                       (@byte-write (@char->int y)))))
            (f))
   """)
+
+  @Test def testRecursiveClosure = compileAndInterpret("""
+     (letrec ((f (fun (x)
+                   (if (@= x 0)
+                      (@byte-write (@char->int 'K'))
+                     (f (@- x 1))))))
+           (@byte-write (@char->int 'O'))
+           (f 5))
+  """)
 }
