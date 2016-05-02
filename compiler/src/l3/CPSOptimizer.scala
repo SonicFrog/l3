@@ -340,8 +340,8 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
     case (CPSAdd, Seq(x, y)) => x + y
     case (CPSSub, Seq(x, y)) => x - y
     case (CPSMul, Seq(x, y)) => x * y
-    case (CPSDiv, Seq(x, y)) if (y != 0) => x / y
-    case (CPSMod, Seq(x, y)) if (y != 0) => x % y
+    case (CPSDiv, Seq(x, y)) if (y != 0) => Math.floorDiv(x, y)
+    case (CPSMod, Seq(x, y)) if (y != 0) => Math.floorMod(x, y)
 
     case (CPSArithShiftL, Seq(x, y)) => x << y
     case (CPSArithShiftR, Seq(x, y)) => x >> y
