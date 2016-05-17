@@ -131,10 +131,10 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     def shrinkT(tree: Tree)(implicit s: State): Tree = {
       val t = tree match {
         // Dead code elimination
-        case LetL(name, _, body) if s dead name => shrinkT(body)
+        case LetL(name, _, body) if s.dead(name) => shrinkT(body)
 
         // Common sub-expr elimination
-        case LetL(name, value, body) if s.lInvEnv contains value =>
+        case LetL(name, value, body) if s.lInvEnv.contains(value) =>
           shrinkT(body)(s.withSubst(name, s.lInvEnv(value)))
 
         case LetL(name, value, body) => shrinkT(body)(s.withLit(name, value))
@@ -235,6 +235,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           // TODO
           tree
       }
+
       t.subst(s.subst)
     }
     shrinkT(tree)(State(census(tree)))
@@ -294,7 +295,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
       def inlineT(tree: Tree)(implicit s: State): Tree = tree match {
         case _ =>
-          // TODO
+          // TODO:
           tree
       }
 
@@ -471,8 +472,8 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
     Literal] = {
     case (L3IntAdd, Seq(IntLit(x), IntLit(y))) => IntLit(x + y)
     case (L3IntMul, Seq(IntLit(x), IntLit(y))) => IntLit(x * y)
-    case (L3IntDiv, Seq(IntLit(x), IntLit(y))) => IntLit(Math.floorDiv(x, y))
-    case (L3IntMod, Seq(IntLit(x), IntLit(y))) => IntLit(Math.floorMod(x, y))
+    case (L3IntDiv, Seq(IntLit(x), IntLit(y))) if y != 0 => IntLit(Math.floorDiv(x, y))
+    case (L3IntMod, Seq(IntLit(x), IntLit(y))) if y != 0 => IntLit(Math.floorMod(x, y))
     case (L3IntBitwiseOr, Seq(IntLit(x), IntLit(y))) => IntLit(x | y)
     case (L3IntBitwiseAnd, Seq(IntLit(x), IntLit(y))) => IntLit(x & y)
     case (L3IntBitwiseXOr, Seq(IntLit(x), IntLit(y))) => IntLit(x ^ y)
