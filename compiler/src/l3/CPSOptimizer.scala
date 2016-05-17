@@ -127,111 +127,114 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     def isRightNeutral(x : Name, prim : ValuePrimitive)(implicit s : State) =
       s.lEnv.get(x).exists(a => rightNeutral(prim -> a))
 
-    def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
-      // Dead code elimination
-      case LetL(name, _, body) if s dead name => shrinkT(body)
+    def shrinkT(tree: Tree)(implicit s: State): Tree = {
+      val t = tree match {
+        // Dead code elimination
+        case LetL(name, _, body) if s dead name => shrinkT(body)
 
-      // Common sub-expr elimination
-      case LetL(name, value, body) if s.lInvEnv contains value =>
-        shrinkT(body)(s.withSubst(name, s.lInvEnv(value)))
+        // Common sub-expr elimination
+        case LetL(name, value, body) if s.lInvEnv contains value =>
+          shrinkT(body)(s.withSubst(name, s.lInvEnv(value)))
 
-      case LetL(name, value, body) => shrinkT(body)(s.withLit(name, value))
+        case LetL(name, value, body) => shrinkT(body)(s.withLit(name, value))
 
-      // Neutral left element optimization
-      case LetP(name, prim, Seq(x, y), body) if isLeftNeutral(x, prim) =>
-        shrinkT(body)(s.withSubst(name, y))
+        // Neutral left element optimization
+        case LetP(name, prim, Seq(x, y), body) if isLeftNeutral(x, prim) =>
+          shrinkT(body)(s.withSubst(name, y))
 
-      // Absorbing left element optimization
-      case LetP(name, prim, Seq(x, y), body) if isLeftAbsorbing(x, prim) =>
-        shrinkT(body)(s.withSubst(name, x))
+        // Absorbing left element optimization
+        case LetP(name, prim, Seq(x, y), body) if isLeftAbsorbing(x, prim) =>
+          shrinkT(body)(s.withSubst(name, x))
 
-      // Neutral right element
-      case LetP(name, prim, Seq(x, y), body) if isRightNeutral(y, prim) =>
-        shrinkT(body)(s.withSubst(name, x))
+        // Neutral right element
+        case LetP(name, prim, Seq(x, y), body) if isRightNeutral(y, prim) =>
+          shrinkT(body)(s.withSubst(name, x))
 
-      // Absorbing right element
-      case LetP(name, prim, Seq(x, y), body) if isRightAbsorbing(y, prim) =>
-        shrinkT(body)(s.withSubst(name, y))
+        // Absorbing right element
+        case LetP(name, prim, Seq(x, y), body) if isRightAbsorbing(y, prim) =>
+          shrinkT(body)(s.withSubst(name, y))
 
-      // Common subexpr elimination
-      case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
-        shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
+        // Common subexpr elimination
+        case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
+          shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
 
-      // Constant folding
-      case LetP(name, prim, args, body) =>
-        val argsValues = args flatMap s.lEnv.get
+        // Constant folding
+        case LetP(name, prim, args, body) =>
+          val argsValues = args flatMap s.lEnv.get
 
-        if (vEvaluator.isDefinedAt(prim, argsValues))
-          shrinkT(LetL(name, vEvaluator(prim, argsValues), body))
-        else LetP(name, prim, args, shrinkT(body)(s withExp (name, prim, args)))
+          if (vEvaluator.isDefinedAt(prim, argsValues))
+            shrinkT(LetL(name, vEvaluator(prim, argsValues), body))
+          else LetP(name, prim, args, shrinkT(body)(s withExp (name, prim, args)))
 
-      // Removing dead continuations
-      case LetC(cnts, body) if cnts exists (s dead _.name) =>
-        val used = cnts.filter(c => !(s.dead(c.name)))
-        shrinkT(LetC(used, body))
+        // Removing dead continuations
+        case LetC(cnts, body) if cnts exists (s dead _.name) =>
+          val used = cnts.filter(c => !(s.dead(c.name)))
+          shrinkT(LetC(used, body))
 
-      // Inlining continuations
-      case LetC(cnts, body) if cnts.exists(s appliedOnce _.name) =>
-        val inlined = cnts.filter(c => s.appliedOnce(c.name))
-        val notInlined = cnts diff inlined
+        // Inlining continuations
+        case LetC(cnts, body) if cnts.exists(s appliedOnce _.name) =>
+          val inlined = cnts.filter(c => s.appliedOnce(c.name))
+          val notInlined = cnts diff inlined
 
-        shrinkT(LetC(notInlined, body))(s.withCnts(inlined))
+          shrinkT(LetC(notInlined, body))(s.withCnts(inlined))
 
-      case LetC(cnts, body) =>
-        val continuations = cnts map { c =>
-          val CntDef(name, args, body) = c
-          CntDef(name, args, shrinkT(body))
-        }
+        case LetC(cnts, body) =>
+          val continuations = cnts map { c =>
+            val CntDef(name, args, body) = c
+            CntDef(name, args, shrinkT(body))
+          }
 
-        if (continuations.isEmpty) shrinkT(body)
-        else LetC(continuations, shrinkT(body))
+          if (continuations.isEmpty) shrinkT(body)
+          else LetC(continuations, shrinkT(body))
 
-      // Folding constant condition
-      case If(cond, Seq(a1, a2), ct, cf) if a1 == a2 =>
-        AppC(if (sameArgReduceC(cond)) ct else cf, Seq())
+        // Folding constant condition
+        case If(cond, Seq(a1, a2), ct, cf) if a1 == a2 =>
+          AppC(if (sameArgReduceC(cond)) ct else cf, Seq())
 
-      case If(cond, args, ct, cf) if cEvaluator.isDefinedAt(cond, args.flatMap(s.lEnv.get)) =>
-        val argsValues = args.flatMap(s.lEnv.get)
-        val condV = cEvaluator(cond, argsValues)
+        case If(cond, args, ct, cf) if cEvaluator.isDefinedAt(cond, args.flatMap(s.lEnv.get)) =>
+          val argsValues = args.flatMap(s.lEnv.get)
+          val condV = cEvaluator(cond, argsValues)
 
-        if (condV) AppC(ct, Seq())
-        else AppC(cf, Seq())
+          if (condV) AppC(ct, Seq())
+          else AppC(cf, Seq())
 
-      // Removing dead functions
-      case LetF(fun, body) if fun.exists(f => s.dead(f.name)) =>
-        shrinkT(LetF(fun.filter(f => !s.dead(f.name)), body))
+        // Removing dead functions
+        case LetF(fun, body) if fun.exists(f => s.dead(f.name)) =>
+          shrinkT(LetF(fun.filter(f => !s.dead(f.name)), body))
 
-      // Marking linear inlineable functions
-      case LetF(fun, body) if fun.exists(f => s.appliedOnce(f.name)) =>
-        val inlineable = fun.filter(f => s.appliedOnce(f.name))
-        val newState = s.withEmptyInvEnvs.withFuns(inlineable)
-        val notInlined = fun.diff(inlineable)
-        shrinkT(LetF(notInlined, body))(newState)
+        // Marking linear inlineable functions
+        case LetF(fun, body) if fun.exists(f => s.appliedOnce(f.name)) =>
+          val inlineable = fun.filter(f => s.appliedOnce(f.name))
+          val newState = s.withEmptyInvEnvs.withFuns(inlineable)
+          val notInlined = fun.diff(inlineable)
+          shrinkT(LetF(notInlined, body))(newState)
 
-      // Optimizing bodies of functions
-      case LetF(fun, body) =>
-        val optFuns = fun map { f =>
-          val FunDef(name, retC, args, body) = f
-          FunDef(name, retC, args, shrinkT(body))
-        }
+        // Optimizing bodies of functions
+        case LetF(fun, body) =>
+          val optFuns = fun map { f =>
+            val FunDef(name, retC, args, body) = f
+            FunDef(name, retC, args, shrinkT(body))
+          }
 
-        // Optimize away when no functions are left
-        if (optFuns.isEmpty) shrinkT(body)
-        else LetF(optFuns, shrinkT(body))
+          // Optimize away when no functions are left
+          if (optFuns.isEmpty) shrinkT(body)
+          else LetF(optFuns, shrinkT(body))
 
-      // Inlining continuation application
-      case AppC(cnt, args) if s.cEnv.contains(cnt) =>
-        val CntDef(_, fromArgs, body) = s.cEnv(cnt)
-        shrinkT(body)(s.withSubst(fromArgs, args))
+        // Inlining continuation application
+        case AppC(cnt, args) if s.cEnv.contains(cnt) =>
+          val CntDef(_, fromArgs, body) = s.cEnv(cnt)
+          shrinkT(body)(s.withSubst(fromArgs, args))
 
-      // Inlining function application
-      case AppF(fun, retC, args) if s.fEnv.contains(fun) =>
-        val FunDef(_, c, fromArgs, body) = s.fEnv(fun)
-        shrinkT(body)(s.withSubst(fromArgs, args))
+        // Inlining function application
+        case AppF(fun, retC, args) if s.fEnv.contains(fun) =>
+          val FunDef(_, c, fromArgs, body) = s.fEnv(fun)
+          shrinkT(body)(s.withSubst(fromArgs, args))
 
-      case _ =>
-        // TODO
-        tree
+        case _ =>
+          // TODO
+          tree
+      }
+      t.subst(s.subst)
     }
     shrinkT(tree)(State(census(tree)))
   }
@@ -247,7 +250,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, args, body) =>
           val name1 = name.copy
           LetP(name1, prim, args map (subst(_)),
-               copyT(body, subst + (name -> name1)))
+            copyT(body, subst + (name -> name1)))
         case LetC(cnts, body) =>
           val names = cnts map (_.name)
           val names1 = names map (_.copy)
@@ -264,7 +267,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           AppF(subst(fun), subst(retC), args map (subst(_)))
         case If(cond, args, thenC, elseC) =>
           If(cond, args map (subst(_)), subst(thenC), subst(elseC))
-        case Halt(arg) =>
+            case Halt(arg) =>
           Halt(subst(arg))
       }
     }
@@ -379,10 +382,10 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   protected val sameArgReduceC: TestPrimitive => Boolean
   // An evaluator for ValuePrimitives
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
-                                            Literal]
+    Literal]
   // An evaluator for TestPrimitives
   protected val cEvaluator: PartialFunction[(TestPrimitive, Seq[Literal]),
-                                            Boolean]
+    Boolean]
 }
 
 object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
@@ -396,7 +399,7 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
     Set(L3BlockGet, L3ByteRead, L3BlockAlloc)
 
   protected val blockAllocTag: PartialFunction[ValuePrimitive, Literal] =
-    { case L3BlockAlloc(tag) => IntLit(tag) }
+  { case L3BlockAlloc(tag) => IntLit(tag) }
 
   protected val blockTag: ValuePrimitive = L3BlockTag
   protected val blockLength: ValuePrimitive = L3BlockLength
@@ -424,10 +427,10 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
     case L3IntGe | L3IntLe | L3Eq => true
     case _ => false
   }
-    //Map(L3IntGe -> true, L3IntLe -> true, L3Eq -> true).getOrElse(_, false)
+  //Map(L3IntGe -> true, L3IntLe -> true, L3Eq -> true).getOrElse(_, false)
 
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
-                                            Literal] = {
+    Literal] = {
     case (L3IntAdd, Seq(IntLit(x), IntLit(y))) => IntLit(x + y)
     case (L3IntMul, Seq(IntLit(x), IntLit(y))) => IntLit(x * y)
     case (L3IntDiv, Seq(IntLit(x), IntLit(y))) => IntLit(Math.floorDiv(x, y))
@@ -481,8 +484,8 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
     Set((0, CPSAdd), (1, CPSMul), (~0, CPSAnd), (0, CPSOr), (0, CPSXOr))
   protected val rightNeutral: Set[(ValuePrimitive, Literal)] =
     Set((CPSAdd, 0), (CPSSub, 0), (CPSMul, 1), (CPSDiv, 1),
-        (CPSArithShiftL, 0), (CPSArithShiftR, 0),
-        (CPSAnd, ~0), (CPSOr, 0), (CPSXOr, 0))
+      (CPSArithShiftL, 0), (CPSArithShiftR, 0),
+      (CPSAnd, ~0), (CPSOr, 0), (CPSXOr, 0))
 
   protected val leftAbsorbing: Set[(Literal, ValuePrimitive)] =
     Set((0, CPSMul), (0, CPSAnd), (~0, CPSOr))
@@ -498,7 +501,7 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
   }
 
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
-                                            Literal] = {
+    Literal] = {
     case (CPSAdd, Seq(x, y)) => x + y
     case (CPSSub, Seq(x, y)) => x - y
     case (CPSMul, Seq(x, y)) => x * y
@@ -513,7 +516,7 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
   }
 
   protected val cEvaluator: PartialFunction[(TestPrimitive, Seq[Literal]),
-                                            Boolean] = {
+    Boolean] = {
     case (CPSLt, Seq(x, y)) => x < y
     case (CPSLe, Seq(x, y)) => x <= y
     case (CPSEq, Seq(x, y)) => x == y
