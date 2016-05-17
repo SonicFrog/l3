@@ -186,7 +186,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
 
           // Registering block-alloc in state
-        case alloc @ LetP(name, prim, Seq(sz), body) if blockAlloc(prim) =>
+        case LetP(name, prim, Seq(sz), body) if blockAlloc(prim) =>
           val newState = s.withBlock(name, blockAllocTag(prim), sz)
           LetP(name, prim, Seq(sz), shrinkT(body)(newState))
 
@@ -574,12 +574,12 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
 
   override def apply(t : Tree) : Tree = {
     val tree = super.apply(t)
-    val writer = new java.io.PrintWriter(System.err)
-    val fmt = new CPSTreeFormatter(SymbolicCPSTreeModuleLow)
-     fmt.toDocument(tree).format(80, writer)
-     writer.println()
-     fmt.toDocument(t).format(80, writer)
-     writer.flush()
+    // val writer = new java.io.PrintWriter(System.err)
+    // val fmt = new CPSTreeFormatter(SymbolicCPSTreeModuleLow)
+    //  fmt.toDocument(tree).format(80, writer)
+    //  writer.println()
+    //  fmt.toDocument(t).format(80, writer)
+    //  writer.flush()
     tree
   }
 
