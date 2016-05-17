@@ -34,7 +34,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     lInvEnv: Map[Literal, Name] = Map.empty,
     // A known block mapped to its tag and length
     bEnv: Map[Name, (Literal, Name)] = Map.empty,
-    // ((p, args) -> n2) is included in eInvEnv iff n2 == p(args) 
+    // ((p, args) -> n2) is included in eInvEnv iff n2 == p(args)
     // Note: useful for common-subexpression elimination
     eInvEnv: Map[(ValuePrimitive, Seq[Name]), Name] = Map.empty,
     // Continuations that will be inlined
@@ -90,7 +90,88 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   // Shrinking optimizations
 
   private def shrink(tree: Tree): Tree = {
+    def isConst(x : Name)(implicit s : State) : Boolean = s.lEnv.contains(x)
+    def valueOf(x : Name)(implicit s : State) : Option[Literal] = s.lEnv.get(x)
+    def inline(x : Name)(implicit s : State) : Boolean = !s.fEnv.get(x).isEmpty
+    def shrinkInline(x : Name)(implicit s : State) : Boolean =
+      s.appliedOnce(x) && !fvOf(s.cEnv(x).body).contains(x)
+    def fvOf(t : Tree) : Seq[Name] = ???
+
     def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
+      // Dead code elimination
+      case LetL(name, _, body) if !fvOf(body).contains(name) => shrinkT(body)
+      case LetP(name, prim, args, body) if !impure(prim) && !fvOf(body).contains(name) =>
+        shrinkT(body)
+
+      case LetL(name, value, body) => shrinkT(body)(s.withLit(name, value))
+
+      // Removing dead continuations and optimizing non dead continuations
+      case LetC(conts, body) => {
+        val usedConts = conts.filter((c : CntDef) => !s.dead(c.name))
+        val optConts = usedConts.map(c => CntDef(c.name, c.args, shrinkT(c.body)))
+        shrinkT(body)(s.withCnts(optConts))
+      }
+
+      // Optimizing primitives with both operands constant
+      case LetP(name, prim, Seq(x, y), body) if isConst(x) && isConst(y) => {
+        val values = Seq(s.lEnv(x), s.lEnv(y))
+        val value = vEvaluator(prim, values)
+
+        LetL(name, value, shrinkT(body)(s.withLit(name, value)))
+      }
+
+      // Optimizing primitives with constant left operand
+      case LetP(name, prim, Seq(x, y), body) if isConst(x) => {
+        val xVal = s.lEnv(x)
+
+        if (leftNeutral(xVal -> prim)) shrinkT(body)(s.withSubst(name, y))
+        else if (leftAbsorbing(xVal -> prim)) shrinkT(body)(s.withSubst(name, x))
+        else LetP(name, prim, Seq(x, y), shrinkT(body)(s.withExp(name, prim, Seq(x, y))))
+      }
+
+      // Optimizing primitives with constant right operand
+      case LetP(name, prim, Seq(x, y), body) if isConst(y) => {
+        val yVal = s.lEnv(y)
+        if (rightNeutral(prim -> yVal)) shrinkT(body)(s.withSubst(name, x))
+        else if (rightAbsorbing(prim -> yVal)) shrinkT(body)(s.withSubst(name, y))
+        else LetP(name, prim, Seq(x, y), shrinkT(body)(s.withExp(name, prim, Seq(x, y))))
+      }
+
+      // Optimizing, marking functions for inlining and removing dead functions
+      case LetF(funs, body) => {
+        val functions = funs filter (f => !s.dead(f.name))
+        val optFun = functions map ((f : FunDef) => FunDef(f.name, f.retC, f.args, shrinkT(f.body)))
+        val inlineables = optFun filter ((f : FunDef) => s.appliedOnce(f.name))
+
+        LetF(functions.filter(f => !s.appliedOnce(f.name)), shrinkT(body)(s.withFuns(inlineables)))
+      }
+
+      case If(cond, args, ct, cf) if cEvaluator.isDefinedAt(cond -> args.map(a => s.lEnv(a))) => {
+        val condV = cEvaluator(cond -> args.map(a => s.lEnv(a)))
+
+        if (condV) AppC(ct, Seq())
+        else AppC(cf, Seq())
+      }
+
+      case AppF(f, retC, args) => {
+        if (inline(f)) {
+          val fVal = s.fEnv(f)
+          val origNames = fVal.retC +: fVal.args
+          val subst = retC +: args
+
+          shrinkT(fVal.body)(s.withSubst(origNames, subst))
+        } else {
+          AppF(f, retC, args)
+        }
+      }
+
+      case AppC(name, args) if s.appliedOnce(name) => {
+        val cntdef = s.cEnv(name)
+        val newState = s.withSubst(cntdef.args, args)
+
+        shrinkT(cntdef.body)(newState)
+      }
+
       case _ =>
         // TODO
         tree
@@ -252,46 +333,70 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
   import treeModule._
 
   protected val impure: ValuePrimitive => Boolean =
-    Set() // TODO
+    Set(L3ByteRead, L3ByteWrite, L3BlockSet) // TODO: Why not L3BlockAlloc ?
 
   protected val unstable: ValuePrimitive => Boolean =
-    Set() // TODO
+    Set(L3BlockGet, L3ByteRead, L3BlockAlloc)
 
   protected val blockAllocTag: PartialFunction[ValuePrimitive, Literal] =
-    Map() // TODO
+    { case L3BlockAlloc(tag) => IntLit(tag) }
 
-  protected val blockTag: ValuePrimitive =
-    ??? // TODO
-  protected val blockLength: ValuePrimitive =
-    ??? // TODO
+  protected val blockTag: ValuePrimitive = L3BlockTag
+  protected val blockLength: ValuePrimitive = L3BlockLength
 
-  protected val identity: ValuePrimitive =
-    ??? // TODO
+  protected val identity: ValuePrimitive = L3Id
 
   protected val leftNeutral: Set[(Literal, ValuePrimitive)] =
-    Set() // TODO
+    Set(IntLit(0) -> L3IntAdd, IntLit(1) -> L3IntMul, IntLit(0) -> L3IntArithShiftLeft,
+      IntLit(0) -> L3IntArithShiftRight, IntLit(0) -> L3IntBitwiseOr, IntLit(~0) -> L3IntBitwiseAnd,
+      IntLit(0) -> L3IntBitwiseXOr)
   protected val rightNeutral: Set[(ValuePrimitive, Literal)] =
-    Set() // TODO
+    Set(L3IntAdd -> IntLit(0), L3IntMul -> IntLit(1), L3IntDiv -> IntLit(1),
+      L3IntBitwiseOr -> IntLit(0), L3IntBitwiseXOr -> IntLit(0), L3IntArithShiftLeft -> IntLit(0),
+      L3IntArithShiftRight -> IntLit(0), L3IntBitwiseAnd -> IntLit(~0))
   protected val leftAbsorbing: Set[(Literal, ValuePrimitive)] =
-    Set() // TODO
+    Set(IntLit(0) -> L3IntMul, IntLit(0) -> L3IntDiv, IntLit(0) -> L3IntBitwiseAnd,
+      IntLit(~0) -> L3IntBitwiseOr)
   protected val rightAbsorbing: Set[(ValuePrimitive, Literal)] =
-    Set() // TODO
+    Set(L3IntMul -> IntLit(0), L3IntBitwiseAnd -> IntLit(0), L3IntBitwiseOr -> IntLit(~0))
 
   protected val sameArgReduce: PartialFunction[ValuePrimitive, Literal] =
-    Map() // TODO
-  protected val sameArgReduceC: PartialFunction[TestPrimitive, Boolean] =
-    Map() // TODO
+    Map(L3IntSub -> IntLit(0), L3IntAdd -> IntLit(0), L3IntDiv -> IntLit(1))
+
+  protected val sameArgReduceC: PartialFunction[TestPrimitive, Boolean] = {
+    case L3IntGe | L3IntLe | L3Eq => true
+    case _ => false
+  }
+    //Map(L3IntGe -> true, L3IntLe -> true, L3Eq -> true).getOrElse(_, false)
 
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
                                             Literal] = {
     case (L3IntAdd, Seq(IntLit(x), IntLit(y))) => IntLit(x + y)
-    // TODO
+    case (L3IntMul, Seq(IntLit(x), IntLit(y))) => IntLit(x * y)
+    case (L3IntDiv, Seq(IntLit(x), IntLit(y))) => IntLit(Math.floorDiv(x, y))
+    case (L3IntMod, Seq(IntLit(x), IntLit(y))) => IntLit(Math.floorMod(x, y))
+    case (L3IntBitwiseOr, Seq(IntLit(x), IntLit(y))) => IntLit(x | y)
+    case (L3IntBitwiseAnd, Seq(IntLit(x), IntLit(y))) => IntLit(x & y)
+    case (L3IntBitwiseXOr, Seq(IntLit(x), IntLit(y))) => IntLit(x ^ y)
+    case (L3IntArithShiftLeft, Seq(IntLit(x), IntLit(y))) => IntLit(x << y)
+    case (L3IntArithShiftRight, Seq(IntLit(x), IntLit(y))) => IntLit(x >> y)
   }
 
+
   protected val cEvaluator: PartialFunction[(TestPrimitive, Seq[Literal]),
-                                            Boolean] = {
+    Boolean] = {
+    //Type test primitives
     case (L3IntP, Seq(IntLit(_))) => true
-    // TODO
+    case (L3CharP, Seq(CharLit(_))) => true
+    case (L3BoolP, Seq(BooleanLit(_))) => true
+    case (L3UnitP, Seq(UnitLit)) => true
+
+    // Arithmetic primitives
+    case (L3IntGt, Seq(IntLit(x), IntLit(y))) => x > y
+    case (L3IntGe, Seq(IntLit(x), IntLit(y))) => x >= y
+    case (L3IntLt, Seq(IntLit(x), IntLit(y))) => x < y
+    case (L3IntLe, Seq(IntLit(x), IntLit(y))) => x <= y
+    case (L3Eq, Seq(x, y)) => x == y
   }
 }
 
