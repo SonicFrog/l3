@@ -9,7 +9,8 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   def apply(tree: Tree): Tree = {
     val simplifiedTree = fixedPoint(tree)(shrink)
     val maxSize = (size(simplifiedTree) * 1.5).toInt
-    fixedPoint(simplifiedTree, 8) { t => inline(t, maxSize) }
+    val t = fixedPoint(simplifiedTree, 8) { t => inline(t, maxSize) }
+    t
   }
 
   /* Counts how many times a symbol is encountered as an applied function,
@@ -392,6 +393,19 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
     with (SymbolicCPSTreeModule.Tree => SymbolicCPSTreeModule.Tree) {
   import treeModule._
 
+  override def apply(t : Tree) = {
+    val writer = new java.io.PrintWriter(System.err)
+    val tree = super.apply(t)
+    val fmt = new CPSTreeFormatter(SymbolicCPSTreeModule)
+    fmt.toDocument(tree).format(80, writer)
+    writer.println()
+    fmt.toDocument(t).format(80, writer)
+    writer.flush()
+    tree
+  }
+
+
+
   protected val impure: ValuePrimitive => Boolean =
     Set(L3ByteRead, L3ByteWrite, L3BlockSet) // TODO: Why not L3BlockAlloc ?
 
@@ -406,22 +420,46 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
 
   protected val identity: ValuePrimitive = L3Id
 
-  protected val leftNeutral: Set[(Literal, ValuePrimitive)] =
-    Set(IntLit(0) -> L3IntAdd, IntLit(1) -> L3IntMul, IntLit(0) -> L3IntArithShiftLeft,
-      IntLit(0) -> L3IntArithShiftRight, IntLit(0) -> L3IntBitwiseOr, IntLit(~0) -> L3IntBitwiseAnd,
-      IntLit(0) -> L3IntBitwiseXOr)
-  protected val rightNeutral: Set[(ValuePrimitive, Literal)] =
-    Set(L3IntAdd -> IntLit(0), L3IntMul -> IntLit(1), L3IntDiv -> IntLit(1),
-      L3IntBitwiseOr -> IntLit(0), L3IntBitwiseXOr -> IntLit(0), L3IntArithShiftLeft -> IntLit(0),
-      L3IntArithShiftRight -> IntLit(0), L3IntBitwiseAnd -> IntLit(~0))
-  protected val leftAbsorbing: Set[(Literal, ValuePrimitive)] =
-    Set(IntLit(0) -> L3IntMul, IntLit(0) -> L3IntDiv, IntLit(0) -> L3IntBitwiseAnd,
-      IntLit(~0) -> L3IntBitwiseOr)
-  protected val rightAbsorbing: Set[(ValuePrimitive, Literal)] =
-    Set(L3IntMul -> IntLit(0), L3IntBitwiseAnd -> IntLit(0), L3IntBitwiseOr -> IntLit(~0))
+  protected val leftNeutral: Set[(Literal, ValuePrimitive)] = Set(
+    IntLit(0) -> L3IntAdd,
+    IntLit(1) -> L3IntMul,
+    IntLit(0) -> L3IntArithShiftLeft,
+    IntLit(0) -> L3IntArithShiftRight,
+    IntLit(0) -> L3IntBitwiseOr,
+    IntLit(~0) -> L3IntBitwiseAnd,
+    IntLit(0) -> L3IntBitwiseXOr
+  )
 
-  protected val sameArgReduce: PartialFunction[ValuePrimitive, Literal] =
-    Map(L3IntSub -> IntLit(0), L3IntAdd -> IntLit(0), L3IntDiv -> IntLit(1))
+  protected val rightNeutral: Set[(ValuePrimitive, Literal)] = Set(
+    L3IntAdd -> IntLit(0),
+    L3IntMul -> IntLit(1),
+    L3IntDiv -> IntLit(1),
+    L3IntBitwiseOr -> IntLit(0),
+    L3IntBitwiseXOr -> IntLit(0),
+    L3IntArithShiftLeft -> IntLit(0),
+    L3IntArithShiftRight -> IntLit(0),
+    L3IntBitwiseAnd -> IntLit(~0)
+  )
+
+  protected val leftAbsorbing: Set[(Literal, ValuePrimitive)] = Set(
+    IntLit(0) -> L3IntMul,
+    IntLit(0) -> L3IntDiv,
+    IntLit(0) -> L3IntBitwiseAnd,
+    IntLit(~0) -> L3IntBitwiseOr
+  )
+
+  protected val rightAbsorbing: Set[(ValuePrimitive, Literal)] = Set(
+    L3IntMul -> IntLit(0),
+    L3IntBitwiseAnd -> IntLit(0),
+    L3IntBitwiseOr -> IntLit(~0)
+  )
+
+  protected val sameArgReduce: PartialFunction[ValuePrimitive, Literal] = Map(
+    L3IntSub -> IntLit(0),
+    L3IntMod -> IntLit(0),
+    L3IntDiv -> IntLit(1),
+    L3IntBitwiseXOr -> IntLit(0)
+  )
 
   protected val sameArgReduceC: PartialFunction[TestPrimitive, Boolean] = {
     case L3IntGe | L3IntLe | L3Eq => true
@@ -447,9 +485,15 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
     Boolean] = {
     //Type test primitives
     case (L3IntP, Seq(IntLit(_))) => true
+    case (L3IntP, Seq(_)) => false
     case (L3CharP, Seq(CharLit(_))) => true
+    case (L3CharP, Seq(_)) => false
     case (L3BoolP, Seq(BooleanLit(_))) => true
+    case (L3BoolP, Seq(_)) => false
     case (L3UnitP, Seq(UnitLit)) => true
+    case (L3UnitP, Seq(_)) => false
+    case (L3BlockP, Seq(IntLit(_) | CharLit(_)
+       | BooleanLit(_) | UnitLit)) => false
 
     // Arithmetic primitives
     case (L3IntGt, Seq(IntLit(x), IntLit(y))) => x > y
@@ -457,6 +501,7 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
     case (L3IntLt, Seq(IntLit(x), IntLit(y))) => x < y
     case (L3IntLe, Seq(IntLit(x), IntLit(y))) => x <= y
     case (L3Eq, Seq(x, y)) => x == y
+    case (L3Ne, Seq(x, y)) => x != y
   }
 }
 
