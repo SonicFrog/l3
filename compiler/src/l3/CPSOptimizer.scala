@@ -87,90 +87,147 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       copy(lInvEnv = Map.empty, eInvEnv = Map.empty)
   }
 
+
+  private def fvOf(tree : Tree) : Seq[Name] = {
+    def F(tree : Tree) : Set[Name] = tree match {
+      case LetL(name, _, e) => F(e) - name
+      case LetP(name, _, args, e) => (F(e) - name) union args.toSet
+      case LetC(cnts, e) => F(e) union (cnts.map(contFV).fold(Set())(_ union _))
+      case LetF(funs, e) => (F(e) union (funs.map(funFV).fold(Set())(_ union _))) -- funs.map(_.name)
+      case AppC(_, args) => args.toSet
+      case AppF(funName, _, args) => args.toSet + funName
+      case If(_, args, _, _) => args.toSet
+      case Halt(arg) => Set(arg)
+    }
+
+    def funFV(f : FunDef) : Set[Name] = f match {
+      case FunDef(_, _, args, e) => F(e) &~ args.toSet
+    }
+
+    def contFV(c : CntDef) : Set[Name] = c match {
+      case CntDef(_, args, e) => F(e) &~ args.toSet
+    }
+
+    F(tree).toSeq
+  }
+
+  private def funFV(fun : FunDef) : Seq[Name] = {
+    (fvOf(fun.body).toSet -- fun.args).toSeq
+  }
+
   // Shrinking optimizations
 
   private def shrink(tree: Tree): Tree = {
-    def isConst(x : Name)(implicit s : State) : Boolean = s.lEnv.contains(x)
-    def valueOf(x : Name)(implicit s : State) : Option[Literal] = s.lEnv.get(x)
-    def inline(x : Name)(implicit s : State) : Boolean = !s.fEnv.get(x).isEmpty
-    def shrinkInline(x : Name)(implicit s : State) : Boolean =
-      s.appliedOnce(x) && !fvOf(s.cEnv(x).body).contains(x)
-    def fvOf(t : Tree) : Seq[Name] = ???
+    def isRightAbsorbing(x : Name, prim : ValuePrimitive)(implicit s : State) =
+      s.lEnv.get(x).exists((a : Literal) => rightAbsorbing(prim -> a))
+    def isLeftAbsorbing(x : Name, prim : ValuePrimitive)(implicit s : State) =
+      s.lEnv.get(x).exists(a => leftAbsorbing(a -> prim))
+    def isLeftNeutral(x : Name, prim : ValuePrimitive)(implicit s : State) =
+      s.lEnv.get(x).exists(a => leftNeutral(a -> prim))
+    def isRightNeutral(x : Name, prim : ValuePrimitive)(implicit s : State) =
+      s.lEnv.get(x).exists(a => rightNeutral(prim -> a))
 
     def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
       // Dead code elimination
-      case LetL(name, _, body) if !fvOf(body).contains(name) => shrinkT(body)
-      case LetP(name, prim, args, body) if !impure(prim) && !fvOf(body).contains(name) =>
-        shrinkT(body)
+      case LetL(name, _, body) if s dead name => shrinkT(body)
+
+      // Common sub-expr elimination
+      case LetL(name, value, body) if s.lInvEnv contains value =>
+        shrinkT(body)(s.withSubst(name, s.lInvEnv(value)))
 
       case LetL(name, value, body) => shrinkT(body)(s.withLit(name, value))
 
-      // Removing dead continuations and optimizing non dead continuations
-      case LetC(conts, body) => {
-        val usedConts = conts.filter((c : CntDef) => !s.dead(c.name))
-        val optConts = usedConts.map(c => CntDef(c.name, c.args, shrinkT(c.body)))
-        shrinkT(body)(s.withCnts(optConts))
-      }
+      // Neutral left element optimization
+      case LetP(name, prim, Seq(x, y), body) if isLeftNeutral(x, prim) =>
+        shrinkT(body)(s.withSubst(name, y))
 
-      // Optimizing primitives with both operands constant
-      case LetP(name, prim, Seq(x, y), body) if isConst(x) && isConst(y) => {
-        val values = Seq(s.lEnv(x), s.lEnv(y))
-        val value = vEvaluator(prim, values)
+      // Absorbing left element optimization
+      case LetP(name, prim, Seq(x, y), body) if isLeftAbsorbing(x, prim) =>
+        shrinkT(body)(s.withSubst(name, x))
 
-        LetL(name, value, shrinkT(body)(s.withLit(name, value)))
-      }
+      // Neutral right element
+      case LetP(name, prim, Seq(x, y), body) if isRightNeutral(y, prim) =>
+        shrinkT(body)(s.withSubst(name, x))
 
-      // Optimizing primitives with constant left operand
-      case LetP(name, prim, Seq(x, y), body) if isConst(x) => {
-        val xVal = s.lEnv(x)
+      // Absorbing right element
+      case LetP(name, prim, Seq(x, y), body) if isRightAbsorbing(y, prim) =>
+        shrinkT(body)(s.withSubst(name, y))
 
-        if (leftNeutral(xVal -> prim)) shrinkT(body)(s.withSubst(name, y))
-        else if (leftAbsorbing(xVal -> prim)) shrinkT(body)(s.withSubst(name, x))
-        else LetP(name, prim, Seq(x, y), shrinkT(body)(s.withExp(name, prim, Seq(x, y))))
-      }
+      // Common subexpr elimination
+      case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
+        shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
 
-      // Optimizing primitives with constant right operand
-      case LetP(name, prim, Seq(x, y), body) if isConst(y) => {
-        val yVal = s.lEnv(y)
-        if (rightNeutral(prim -> yVal)) shrinkT(body)(s.withSubst(name, x))
-        else if (rightAbsorbing(prim -> yVal)) shrinkT(body)(s.withSubst(name, y))
-        else LetP(name, prim, Seq(x, y), shrinkT(body)(s.withExp(name, prim, Seq(x, y))))
-      }
+      // Constant folding
+      case LetP(name, prim, args, body) =>
+        val argsValues = args flatMap s.lEnv.get
 
-      // Optimizing, marking functions for inlining and removing dead functions
-      case LetF(funs, body) => {
-        val functions = funs filter (f => !s.dead(f.name))
-        val optFun = functions map ((f : FunDef) => FunDef(f.name, f.retC, f.args, shrinkT(f.body)))
-        val inlineables = optFun filter ((f : FunDef) => s.appliedOnce(f.name))
+        if (vEvaluator.isDefinedAt(prim, argsValues))
+          shrinkT(LetL(name, vEvaluator(prim, argsValues), body))
+        else LetP(name, prim, args, shrinkT(body)(s withExp (name, prim, args)))
 
-        LetF(functions.filter(f => !s.appliedOnce(f.name)), shrinkT(body)(s.withFuns(inlineables)))
-      }
+      // Removing dead continuations
+      case LetC(cnts, body) if cnts exists (s dead _.name) =>
+        val used = cnts.filter(c => !(s.dead(c.name)))
+        shrinkT(LetC(used, body))
 
-      case If(cond, args, ct, cf) if cEvaluator.isDefinedAt(cond -> args.map(a => s.lEnv(a))) => {
-        val condV = cEvaluator(cond -> args.map(a => s.lEnv(a)))
+      // Inlining continuations
+      case LetC(cnts, body) if cnts.exists(s appliedOnce _.name) =>
+        val inlined = cnts.filter(c => s.appliedOnce(c.name))
+        val notInlined = cnts diff inlined
+
+        shrinkT(LetC(notInlined, body))(s.withCnts(inlined))
+
+      case LetC(cnts, body) =>
+        val continuations = cnts map { c =>
+          val CntDef(name, args, body) = c
+          CntDef(name, args, shrinkT(body))
+        }
+
+        if (continuations.isEmpty) shrinkT(body)
+        else LetC(continuations, shrinkT(body))
+
+      // Folding constant condition
+      case If(cond, Seq(a1, a2), ct, cf) if a1 == a2 =>
+        AppC(if (sameArgReduceC(cond)) ct else cf, Seq())
+
+      case If(cond, args, ct, cf) if cEvaluator.isDefinedAt(cond, args.flatMap(s.lEnv.get)) =>
+        val argsValues = args.flatMap(s.lEnv.get)
+        val condV = cEvaluator(cond, argsValues)
 
         if (condV) AppC(ct, Seq())
         else AppC(cf, Seq())
-      }
 
-      case AppF(f, retC, args) => {
-        if (inline(f)) {
-          val fVal = s.fEnv(f)
-          val origNames = fVal.retC +: fVal.args
-          val subst = retC +: args
+      // Removing dead functions
+      case LetF(fun, body) if fun.exists(f => s.dead(f.name)) =>
+        shrinkT(LetF(fun.filter(f => !s.dead(f.name)), body))
 
-          shrinkT(fVal.body)(s.withSubst(origNames, subst))
-        } else {
-          AppF(f, retC, args)
+      // Marking linear inlineable functions
+      case LetF(fun, body) if fun.exists(f => s.appliedOnce(f.name)) =>
+        val inlineable = fun.filter(f => s.appliedOnce(f.name))
+        val newState = s.withEmptyInvEnvs.withFuns(inlineable)
+        val notInlined = fun.diff(inlineable)
+        shrinkT(LetF(notInlined, body))(newState)
+
+      // Optimizing bodies of functions
+      case LetF(fun, body) =>
+        val optFuns = fun map { f =>
+          val FunDef(name, retC, args, body) = f
+          FunDef(name, retC, args, shrinkT(body))
         }
-      }
 
-      case AppC(name, args) if s.appliedOnce(name) => {
-        val cntdef = s.cEnv(name)
-        val newState = s.withSubst(cntdef.args, args)
+        // Optimize away when no functions are left
+        if (optFuns.isEmpty) shrinkT(body)
+        else LetF(optFuns, shrinkT(body))
 
-        shrinkT(cntdef.body)(newState)
-      }
+      // Inlining continuation application
+      case AppC(cnt, args) if s.cEnv.contains(cnt) =>
+        val CntDef(_, fromArgs, body) = s.cEnv(cnt)
+        shrinkT(body)(s.withSubst(fromArgs, args))
+
+      // Inlining function application
+      case AppF(fun, retC, args) if s.fEnv.contains(fun) =>
+        val FunDef(_, c, fromArgs, body) = s.fEnv(fun)
+        shrinkT(body)(s.withSubst(fromArgs, args))
 
       case _ =>
         // TODO
