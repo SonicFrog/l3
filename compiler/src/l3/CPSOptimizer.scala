@@ -35,6 +35,8 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     lInvEnv: Map[Literal, Name] = Map.empty,
     // A known block mapped to its tag and length
     bEnv: Map[Name, (Literal, Name)] = Map.empty,
+    // A map of block names and indexes mapped to their values
+    bEnvSet : Map[(Name, Name), Name] = Map.empty,
     // ((p, args) -> n2) is included in eInvEnv iff n2 == p(args)
     // Note: useful for common-subexpression elimination
     eInvEnv: Map[(ValuePrimitive, Seq[Name]), Name] = Map.empty,
@@ -64,6 +66,9 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     // Adds a block to the state
     def withBlock(name: Name, tag: Literal, size: Name) =
       copy(bEnv = bEnv + (name -> (tag, size)))
+    // Adds a blockSet to the state
+    def withBlockSet(name : Name, index : Name, value : Name) =
+      copy(bEnvSet = bEnvSet + ((name, index) -> value))
     // Adds a primitive assignment to the state
     def withExp(name: Name, prim: ValuePrimitive, args: Seq[Name]) =
       copy(eInvEnv = eInvEnv + ((prim, args) -> name))
@@ -128,6 +133,19 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     def isRightNeutral(x : Name, prim : ValuePrimitive)(implicit s : State) =
       s.lEnv.get(x).exists(a => rightNeutral(prim -> a))
 
+    def isClosureBlock(b : Name)(implicit s : State) : Boolean =
+      s.bEnv.get(b) match {
+        case None => false
+        case Some((x, _)) => x == 202
+      }
+
+    def hasBlockSet(b : Name, i : Name)(implicit s : State) : Boolean =
+      s.bEnvSet.get(b -> i) match {
+        case None => false
+        case Some(_) => true
+      }
+
+
     def shrinkT(tree: Tree)(implicit s: State): Tree = {
       val t = tree match {
         // Dead code elimination
@@ -166,6 +184,31 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         // Common subexpr elimination
         case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
           shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
+
+          // Registering block-alloc in state
+        case alloc @ LetP(name, prim, Seq(sz), body) if blockAlloc(prim) =>
+          val newState = s.withBlock(name, blockAllocTag(prim), sz)
+          LetP(name, prim, Seq(sz), shrinkT(body)(newState))
+
+        // Registering blockSet on read only blocks
+        case LetP(name, prim, Seq(b, i, v), body)
+            if prim == blockSet && isClosureBlock(b) =>
+          LetP(name, prim, Seq(b, i, v), shrinkT(body)(s.withBlockSet(b, i, v)))
+
+        case LetP(name, prim, Seq(b, i), body)
+            if prim == blockGet && isClosureBlock(b) && hasBlockSet(b, i) =>
+          shrinkT(body)(s.withSubst(name, s.bEnvSet(b ->i)))
+
+
+        // Optimizing block length when known
+        case LetP(name, prim, Seq(bName), body)
+            if prim == blockLength && s.bEnv.contains(bName) =>
+          shrinkT(body)(s.withSubst(name, s.bEnv(bName)._2))
+
+          // Optimizing block tag when known
+        case LetP(name, prim, Seq(bName), body)
+            if prim == blockTag && s.bEnv.contains(bName) =>
+          shrinkT(LetL(name, s.bEnv(bName)._1, body))
 
         // Constant folding
         case LetP(name, prim, args, body) =>
@@ -239,7 +282,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         // Inlining function application
         case AppF(fun, retC, args) if s.fEnv.contains(fun) =>
           val FunDef(_, c, fromArgs, body) = s.fEnv(fun)
-          shrinkT(body)(s.withSubst(fromArgs, args))
+          shrinkT(body)(s.withSubst(c +: fromArgs, retC +: args))
 
         case _ =>
           tree
@@ -376,6 +419,12 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   protected val blockTag: ValuePrimitive
   // Returns true for the block length primitive
   protected val blockLength: ValuePrimitive
+  // Returns true for the block alloc primitive
+  protected val blockAlloc : ValuePrimitive => Boolean
+  // Returns true for the block get primitive
+  protected val blockGet : ValuePrimitive
+  // Returns true for the block set primitive
+  protected val blockSet : ValuePrimitive
   // Returns true for the identity primitive
   protected val identity: ValuePrimitive
 
@@ -427,6 +476,10 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
 
   protected val blockTag: ValuePrimitive = L3BlockTag
   protected val blockLength: ValuePrimitive = L3BlockLength
+
+  protected val blockGet : ValuePrimitive = L3BlockGet
+  protected val blockSet : ValuePrimitive = L3BlockSet
+  protected val blockAlloc : ValuePrimitive => Boolean = p => p.isInstanceOf[L3BlockAlloc]
 
   protected val identity: ValuePrimitive = L3Id
 
@@ -519,6 +572,17 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
     with (SymbolicCPSTreeModuleLow.Tree => SymbolicCPSTreeModuleLow.Tree) {
   import treeModule._
 
+  override def apply(t : Tree) : Tree = {
+    val tree = super.apply(t)
+    val writer = new java.io.PrintWriter(System.err)
+    val fmt = new CPSTreeFormatter(SymbolicCPSTreeModuleLow)
+     fmt.toDocument(tree).format(80, writer)
+     writer.println()
+     fmt.toDocument(t).format(80, writer)
+     writer.flush()
+    tree
+  }
+
   protected val impure: ValuePrimitive => Boolean =
     Set(CPSBlockSet, CPSByteRead, CPSByteWrite)
 
@@ -532,6 +596,10 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
   }
   protected val blockTag: ValuePrimitive = CPSBlockTag
   protected val blockLength: ValuePrimitive = CPSBlockLength
+  protected val blockGet : ValuePrimitive = CPSBlockGet
+  protected val blockSet : ValuePrimitive = CPSBlockSet
+  protected val blockAlloc : ValuePrimitive => Boolean = p => p.isInstanceOf[CPSBlockAlloc]
+
 
   protected val identity: ValuePrimitive = CPSId
 
