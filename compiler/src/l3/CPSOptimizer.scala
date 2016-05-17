@@ -131,13 +131,21 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     def shrinkT(tree: Tree)(implicit s: State): Tree = {
       val t = tree match {
         // Dead code elimination
-        case LetL(name, _, body) if s.dead(name) => shrinkT(body)
-
+        case LetL(name, value, body) if s.dead(name) => {
+          println("Removing " + name + " = " + value)
+          shrinkT(body)
+        }
         // Common sub-expr elimination
         case LetL(name, value, body) if s.lInvEnv.contains(value) =>
           shrinkT(body)(s.withSubst(name, s.lInvEnv(value)))
 
-        case LetL(name, value, body) => shrinkT(body)(s.withLit(name, value))
+        // Not yet seen literal added to state
+        case LetL(name, value, body) =>
+          LetL(name, value, shrinkT(body)(s.withLit(name, value)))
+
+        // Removing dead primitive
+        case LetP(name, prim, _, body) if s.dead(name) && !impure(prim) =>
+          shrinkT(body)
 
         // Neutral left element optimization
         case LetP(name, prim, Seq(x, y), body) if isLeftNeutral(x, prim) =>
@@ -172,13 +180,14 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           val used = cnts.filter(c => !(s.dead(c.name)))
           shrinkT(LetC(used, body))
 
-        // Inlining continuations
+        // Marking continuations for inlining
         case LetC(cnts, body) if cnts.exists(s appliedOnce _.name) =>
           val inlined = cnts.filter(c => s.appliedOnce(c.name))
           val notInlined = cnts diff inlined
 
           shrinkT(LetC(notInlined, body))(s.withCnts(inlined))
 
+        // Handling non inlineable continuations
         case LetC(cnts, body) =>
           val continuations = cnts map { c =>
             val CntDef(name, args, body) = c
@@ -192,6 +201,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case If(cond, Seq(a1, a2), ct, cf) if a1 == a2 =>
           AppC(if (sameArgReduceC(cond)) ct else cf, Seq())
 
+        // Optimizing constant dependant condition in Ifs
         case If(cond, args, ct, cf) if cEvaluator.isDefinedAt(cond, args.flatMap(s.lEnv.get)) =>
           val argsValues = args.flatMap(s.lEnv.get)
           val condV = cEvaluator(cond, argsValues)
@@ -232,7 +242,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           shrinkT(body)(s.withSubst(fromArgs, args))
 
         case _ =>
-          // TODO
           tree
       }
 
@@ -395,13 +404,13 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
   import treeModule._
 
   override def apply(t : Tree) = {
-    val writer = new java.io.PrintWriter(System.err)
     val tree = super.apply(t)
-    val fmt = new CPSTreeFormatter(SymbolicCPSTreeModule)
-    fmt.toDocument(tree).format(80, writer)
-    writer.println()
-    fmt.toDocument(t).format(80, writer)
-    writer.flush()
+    // val writer = new java.io.PrintWriter(System.err)
+    // val fmt = new CPSTreeFormatter(SymbolicCPSTreeModule)
+    //  fmt.toDocument(tree).format(80, writer)
+    //  writer.println()
+    //  fmt.toDocument(t).format(80, writer)
+    //  writer.flush()
     tree
   }
 
