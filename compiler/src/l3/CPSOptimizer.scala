@@ -150,7 +150,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       val t = tree match {
         // Dead code elimination
         case LetL(name, value, body) if s.dead(name) => {
-          println("Removing " + name + " = " + value)
           shrinkT(body)
         }
         // Common sub-expr elimination
