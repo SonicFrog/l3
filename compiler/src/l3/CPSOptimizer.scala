@@ -124,10 +124,12 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   // Shrinking optimizations
 
   private def shrink(tree: Tree): Tree = {
-    def isRightAbsorbing(x : Name, prim : ValuePrimitive)(implicit s : State) =
+    def isRightAbsorbing(x : Name, prim : ValuePrimitive)(implicit s : State) = {
       s.lEnv.get(x).exists((a : Literal) => rightAbsorbing(prim -> a))
-    def isLeftAbsorbing(x : Name, prim : ValuePrimitive)(implicit s : State) =
+    }
+    def isLeftAbsorbing(x : Name, prim : ValuePrimitive)(implicit s : State) = {
       s.lEnv.get(x).exists(a => leftAbsorbing(a -> prim))
+    }
     def isLeftNeutral(x : Name, prim : ValuePrimitive)(implicit s : State) =
       s.lEnv.get(x).exists(a => leftNeutral(a -> prim))
     def isRightNeutral(x : Name, prim : ValuePrimitive)(implicit s : State) =
@@ -147,7 +149,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
 
     def shrinkT(tree: Tree)(implicit s: State): Tree = {
-      val t = tree match {
+      tree.subst(s.subst) match {
         // Dead code elimination
         case LetL(name, value, body) if s.dead(name) => {
           shrinkT(body)
@@ -281,11 +283,9 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           val FunDef(_, c, fromArgs, body) = s.fEnv(fun)
           shrinkT(body)(s.withSubst(c +: fromArgs, retC +: args))
 
-        case _ =>
-          tree
+        case rest =>
+          rest
       }
-
-      t.subst(s.subst)
     }
     shrinkT(tree)(State(census(tree)))
   }
@@ -526,8 +526,6 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
   protected val leftNeutral: Set[(Literal, ValuePrimitive)] = Set(
     IntLit(0) -> L3IntAdd,
     IntLit(1) -> L3IntMul,
-    IntLit(0) -> L3IntArithShiftLeft,
-    IntLit(0) -> L3IntArithShiftRight,
     IntLit(0) -> L3IntBitwiseOr,
     IntLit(~0) -> L3IntBitwiseAnd,
     IntLit(0) -> L3IntBitwiseXOr
@@ -547,6 +545,8 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
   protected val leftAbsorbing: Set[(Literal, ValuePrimitive)] = Set(
     IntLit(0) -> L3IntMul,
     IntLit(0) -> L3IntDiv,
+    IntLit(0) -> L3IntArithShiftLeft,
+    IntLit(0) -> L3IntArithShiftRight,
     IntLit(0) -> L3IntBitwiseAnd,
     IntLit(~0) -> L3IntBitwiseOr
   )
