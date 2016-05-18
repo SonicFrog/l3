@@ -185,7 +185,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
           shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
 
-          // Registering block-alloc in state
+        // Registering block-alloc in state
         case LetP(name, prim, Seq(sz), body) if blockAlloc(prim) =>
           val newState = s.withBlock(name, blockAllocTag(prim), sz)
           LetP(name, prim, Seq(sz), shrinkT(body)(newState))
@@ -195,17 +195,17 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
             if prim == blockSet && isClosureBlock(b) =>
           LetP(name, prim, Seq(b, i, v), shrinkT(body)(s.withBlockSet(b, i, v)))
 
+        // Optimizing block get when the block is known and read only
         case LetP(name, prim, Seq(b, i), body)
             if prim == blockGet && isClosureBlock(b) && hasBlockSet(b, i) =>
           shrinkT(body)(s.withSubst(name, s.bEnvSet(b ->i)))
-
 
         // Optimizing block length when known
         case LetP(name, prim, Seq(bName), body)
             if prim == blockLength && s.bEnv.contains(bName) =>
           shrinkT(body)(s.withSubst(name, s.bEnv(bName)._2))
 
-          // Optimizing block tag when known
+        // Optimizing block tag when known
         case LetP(name, prim, Seq(bName), body)
             if prim == blockTag && s.bEnv.contains(bName) =>
           shrinkT(LetL(name, s.bEnv(bName)._1, body))
@@ -225,8 +225,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
         // Marking continuations for inlining
         case LetC(cnts, body) if cnts.exists(s appliedOnce _.name) =>
-          val inlined = cnts.filter(c => s.appliedOnce(c.name))
-          val notInlined = cnts diff inlined
+          val (inlined, notInlined) = cnts.partition(c => s.appliedOnce(c.name))
 
           shrinkT(LetC(notInlined, body))(s.withCnts(inlined))
 
@@ -244,7 +243,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case If(cond, Seq(a1, a2), ct, cf) if a1 == a2 =>
           AppC(if (sameArgReduceC(cond)) ct else cf, Seq())
 
-        // Optimizing constant dependant condition in Ifs
+        // Optimizing constant condition in Ifs
         case If(cond, args, ct, cf) if cEvaluator.isDefinedAt(cond, args.flatMap(s.lEnv.get)) =>
           val argsValues = args.flatMap(s.lEnv.get)
           val condV = cEvaluator(cond, argsValues)
@@ -258,9 +257,8 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
         // Marking linear inlineable functions
         case LetF(fun, body) if fun.exists(f => s.appliedOnce(f.name)) =>
-          val inlineable = fun.filter(f => s.appliedOnce(f.name))
+          val (inlineable, notInlined) = fun.partition(f => s.appliedOnce(f.name))
           val newState = s.withEmptyInvEnvs.withFuns(inlineable)
-          val notInlined = fun.diff(inlineable)
           shrinkT(LetF(notInlined, body))(newState)
 
         // Optimizing bodies of functions
@@ -345,10 +343,53 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       val funLimit = fibonacci(i)
       val cntLimit = i
 
-      def inlineT(tree: Tree)(implicit s: State): Tree = tree match {
-        case _ =>
-          // TODO:
-          tree
+      def shouldInlineF(fun : FunDef) : Boolean = fun match {
+        case FunDef(_, _, _, body) => size(body) <= funLimit
+      }
+
+      def shouldInlineC(cnt : CntDef) : Boolean = cnt match {
+        case CntDef(_, _, body) => size(body) <= cntLimit
+      }
+
+      def isInlinedF(fun : Name)(implicit s : State) =
+        s.fEnv.contains(fun)
+      def isInlinedC(cnt : Name)(implicit s : State) =
+        s.cEnv.contains(cnt)
+
+      def inlineT(tree: Tree)(implicit s: State): Tree = {
+        tree match {
+          case LetF(funs, body) =>
+            val (inlined, notInlined) = funs.partition(f => shouldInlineF(f))
+            val newState = s.withFuns(inlined)
+            val functions = (notInlined map {
+              case FunDef(name, retC, args, body) =>
+                FunDef(name, retC, args, inlineT(body)(newState))
+            }) ++ inlined
+            // The inlined functions must still be defined since they are not always inlined
+            LetF(functions, inlineT(body)(newState))
+
+          case LetC(conts, body) =>
+            val (inlined, notInlined) = conts.partition(c => shouldInlineC(c))
+            val newState = s.withCnts(inlined)
+            val continuations = (notInlined map {
+              case CntDef(name, args, body) =>
+                CntDef(name, args, inlineT(body)(newState))
+            }) ++ inlined
+            LetC(continuations, inlineT(body)(newState))
+
+          case AppF(fun, retC, args) if isInlinedF(fun) =>
+            val FunDef(name, rc, formalArgs, body) = s.fEnv(fun)
+            val newState = s.withSubst(rc +: formalArgs, retC +: args)
+            body.subst(newState.subst)
+
+          case AppC(cont, args) if isInlinedC(cont) =>
+            val CntDef(name, formalArgs, body) = s.cEnv(cont)
+            val newState = s.withSubst(formalArgs, args)
+            body.subst(newState.subst)
+
+          case _ =>
+            tree
+        }
       }
 
       (i + 1, fixedPoint(inlineT(tree)(State(census(tree))))(shrink))
