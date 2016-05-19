@@ -182,6 +182,9 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, Seq(x, y), body) if isLeftNeutral(x, prim) =>
           shrinkT(body)(s.withSubst(name, y))
 
+        case LetP(name, prim, args, body) if unstable(prim) =>
+          LetP(name, prim, args, shrinkT(body))
+
         // Absorbing left element optimization
         case LetP(name, prim, Seq(x, y), body) if isLeftAbsorbing(x, prim) =>
           shrinkT(body)(s.withSubst(name, x))
