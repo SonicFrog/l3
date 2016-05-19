@@ -374,7 +374,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         s.cEnv.contains(cnt)
 
       def inlineT(tree: Tree)(implicit s: State): Tree = {
-        tree match {
+        tree.subst(s.subst) match {
           case LetF(funs, body) =>
             val (inlined, notInlined) = funs.partition(f => shouldInlineF(f))
             val newState = s.withFuns(inlined)
@@ -397,15 +397,15 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           case AppF(fun, retC, args) if isInlinedF(fun) =>
             val FunDef(name, rc, formalArgs, body) = s.fEnv(fun)
             val newState = s.withSubst(rc +: formalArgs, retC +: args)
-            body.subst(newState.subst)
+            body
 
           case AppC(cont, args) if isInlinedC(cont) =>
             val CntDef(name, formalArgs, body) = s.cEnv(cont)
             val newState = s.withSubst(formalArgs, args)
-            body.subst(newState.subst)
+            body
 
-          case _ =>
-            tree
+          case rest =>
+            rest
         }
       }
 
@@ -551,6 +551,7 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
 
   protected val rightNeutral: Set[(ValuePrimitive, Literal)] = Set(
     L3IntAdd -> IntLit(0),
+    L3IntSub -> IntLit(0),
     L3IntMul -> IntLit(1),
     L3IntDiv -> IntLit(1),
     L3IntBitwiseOr -> IntLit(0),
