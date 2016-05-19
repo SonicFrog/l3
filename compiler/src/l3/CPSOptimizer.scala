@@ -147,6 +147,18 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case Some(_) => true
       }
 
+    def isSameArg(a : Name, b : Name)(implicit s : State) : Boolean = {
+      a == b || {
+        s.lEnv.get(a) match {
+          case None => false
+          case Some(v1) => s.lEnv.get(b) match {
+            case None => false
+            case Some(v2) => v1 == v2
+          }
+        }
+      }
+    }
+
 
     def shrinkT(tree: Tree)(implicit s: State): Tree = {
       tree.subst(s.subst) match {
@@ -185,6 +197,12 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         // Common subexpr elimination
         case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
           shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
+
+        case LetP(name, prim, args @ Seq(x, y), body)
+            if isSameArg(x, y) && sameArgReduce.isDefinedAt(prim) =>
+          val v = sameArgReduce(prim)
+          println("Removing sameArg primitive: " + prim + x + y)
+          LetL(name, v, shrinkT(body)(s.withLit(name, v)))
 
         // Registering block-alloc in state
         case LetP(name, prim, Seq(sz), body) if blockAlloc(prim) =>
@@ -572,7 +590,9 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
 
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
     Literal] = {
+    case (L3Id, Seq(lit)) => lit
     case (L3IntAdd, Seq(IntLit(x), IntLit(y))) => IntLit(x + y)
+    case (L3IntSub, Seq(IntLit(x), IntLit(y))) => IntLit(x - y)
     case (L3IntMul, Seq(IntLit(x), IntLit(y))) => IntLit(x * y)
     case (L3IntDiv, Seq(IntLit(x), IntLit(y))) if y != 0 => IntLit(Math.floorDiv(x, y))
     case (L3IntMod, Seq(IntLit(x), IntLit(y))) if y != 0 => IntLit(Math.floorMod(x, y))
@@ -614,12 +634,12 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
 
   override def apply(t : Tree) : Tree = {
     val tree = super.apply(t)
-    // val writer = new java.io.PrintWriter(System.err)
-    // val fmt = new CPSTreeFormatter(SymbolicCPSTreeModuleLow)
-    //  fmt.toDocument(tree).format(80, writer)
-    //  writer.println()
-    //  fmt.toDocument(t).format(80, writer)
-    //  writer.flush()
+    val writer = new java.io.PrintWriter(System.err)
+    val fmt = new CPSTreeFormatter(SymbolicCPSTreeModuleLow)
+    fmt.toDocument(tree).format(80, writer)
+    writer.println()
+    fmt.toDocument(t).format(80, writer)
+    writer.flush()
     tree
   }
 
