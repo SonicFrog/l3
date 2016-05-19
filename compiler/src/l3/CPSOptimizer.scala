@@ -634,12 +634,12 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
 
   override def apply(t : Tree) : Tree = {
     val tree = super.apply(t)
-    val writer = new java.io.PrintWriter(System.err)
-    val fmt = new CPSTreeFormatter(SymbolicCPSTreeModuleLow)
-    fmt.toDocument(tree).format(80, writer)
-    writer.println()
-    fmt.toDocument(t).format(80, writer)
-    writer.flush()
+    // val writer = new java.io.PrintWriter(System.err)
+    // val fmt = new CPSTreeFormatter(SymbolicCPSTreeModuleLow)
+    // fmt.toDocument(tree).format(80, writer)
+    // writer.println()
+    // fmt.toDocument(t).format(80, writer)
+    // writer.flush()
     tree
   }
 
