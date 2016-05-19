@@ -194,15 +194,9 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, Seq(x, y), body) if isRightAbsorbing(y, prim) =>
           shrinkT(body)(s.withSubst(name, y))
 
-        // Common subexpr elimination
-        case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
-          shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
-
         case LetP(name, prim, args @ Seq(x, y), body)
             if isSameArg(x, y) && sameArgReduce.isDefinedAt(prim) =>
-          val v = sameArgReduce(prim)
-          println("Removing sameArg primitive: " + prim + x + y)
-          LetL(name, v, shrinkT(body)(s.withLit(name, v)))
+          shrinkT(LetL(name, sameArgReduce(prim), body))
 
         // Registering block-alloc in state
         case LetP(name, prim, Seq(sz), body) if blockAlloc(prim) =>
@@ -228,6 +222,10 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, Seq(bName), body)
             if prim == blockTag && s.bEnv.contains(bName) =>
           shrinkT(LetL(name, s.bEnv(bName)._1, body))
+
+        // Common subexpr elimination
+        case LetP(name, prim, args, body) if s.eInvEnv contains (prim, args) =>
+          shrinkT(body)(s withSubst(name, s.eInvEnv(prim, args)))
 
         // Constant folding
         case LetP(name, prim, args, body) =>
