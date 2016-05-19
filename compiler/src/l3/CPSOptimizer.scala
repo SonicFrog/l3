@@ -93,34 +93,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       copy(lInvEnv = Map.empty, eInvEnv = Map.empty)
   }
 
-
-  private def fvOf(tree : Tree) : Seq[Name] = {
-    def F(tree : Tree) : Set[Name] = tree match {
-      case LetL(name, _, e) => F(e) - name
-      case LetP(name, _, args, e) => (F(e) - name) union args.toSet
-      case LetC(cnts, e) => F(e) union (cnts.map(contFV).fold(Set())(_ union _))
-      case LetF(funs, e) => (F(e) union (funs.map(funFV).fold(Set())(_ union _))) -- funs.map(_.name)
-      case AppC(_, args) => args.toSet
-      case AppF(funName, _, args) => args.toSet + funName
-      case If(_, args, _, _) => args.toSet
-      case Halt(arg) => Set(arg)
-    }
-
-    def funFV(f : FunDef) : Set[Name] = f match {
-      case FunDef(_, _, args, e) => F(e) &~ args.toSet
-    }
-
-    def contFV(c : CntDef) : Set[Name] = c match {
-      case CntDef(_, args, e) => F(e) &~ args.toSet
-    }
-
-    F(tree).toSeq
-  }
-
-  private def funFV(fun : FunDef) : Seq[Name] = {
-    (fvOf(fun.body).toSet -- fun.args).toSeq
-  }
-
   // Shrinking optimizations
 
   private def shrink(tree: Tree): Tree = {
@@ -182,9 +154,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, Seq(x, y), body) if isLeftNeutral(x, prim) =>
           shrinkT(body)(s.withSubst(name, y))
 
-        case LetP(name, prim, args, body) if unstable(prim) =>
-          LetP(name, prim, args, shrinkT(body))
-
         // Absorbing left element optimization
         case LetP(name, prim, Seq(x, y), body) if isLeftAbsorbing(x, prim) =>
           shrinkT(body)(s.withSubst(name, x))
@@ -197,8 +166,11 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, Seq(x, y), body) if isRightAbsorbing(y, prim) =>
           shrinkT(body)(s.withSubst(name, y))
 
+        case LetP(name, prim, Seq(x), body) if prim == identity =>
+          shrinkT(body)(s.withSubst(name, x))
+
         case LetP(name, prim, args @ Seq(x, y), body)
-            if isSameArg(x, y) && sameArgReduce.isDefinedAt(prim) =>
+            if sameArgReduce.isDefinedAt(prim) && isSameArg(x, y) =>
           shrinkT(LetL(name, sameArgReduce(prim), body))
 
         // Registering block-alloc in state
@@ -525,7 +497,7 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
 
 
   protected val impure: ValuePrimitive => Boolean =
-    Set(L3ByteRead, L3ByteWrite, L3BlockSet) // TODO: Why not L3BlockAlloc ?
+    Set(L3ByteRead, L3ByteWrite, L3BlockSet)
 
   protected val unstable: ValuePrimitive => Boolean =
     Set(L3BlockGet, L3ByteRead, L3BlockAlloc)
@@ -592,7 +564,6 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
 
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
     Literal] = {
-    case (L3Id, Seq(lit)) => lit
     case (L3IntAdd, Seq(IntLit(x), IntLit(y))) => IntLit(x + y)
     case (L3IntSub, Seq(IntLit(x), IntLit(y))) => IntLit(x - y)
     case (L3IntMul, Seq(IntLit(x), IntLit(y))) => IntLit(x * y)
