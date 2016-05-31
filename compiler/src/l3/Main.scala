@@ -16,17 +16,18 @@ object Main extends MainHelper {
         case Success(program, _) =>
           val backEnd = (
             CL3NameAnalyzer
-              andThen treePrinter("Tree in CL3")
               andThen reference.CL3ToCPSTranslator
-              andThen CPSOptimizerHigh
-              andThen treePrinter("Tree in CPS")
-              andThen passThrough(SymbolicCPSTreeChecker)
+              andThen reference.CPSOptimizerHigh
+              andThen CPSContifier
               andThen reference.CPSValueRepresenter
-              andThen CPSOptimizerLow
-              andThen treePrinter("Tree in CPS-low")
-              andThen passThrough(SymbolicCPSTreeLowChecker)
+              andThen reference.CPSOptimizerLow
               andThen reference.CPSHoister
-              andThen (new CPSInterpreterLowWithStats(showStats = true))
+              andThen CPSRegisterAllocator
+              andThen CPSToASMTranslator
+              andThen ASMLabelResolver
+              // Use this to interpret your assembly
+              // andThen ASMInterpreter
+              andThen ASMFileWriter("out.asm")
           )
           try {
             backEnd(program)

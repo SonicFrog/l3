@@ -87,3 +87,22 @@ object SymbolicCPSTreeModuleLow extends CPSTreeModule {
   type Literal = Int
 }
 
+/**
+ * Module for register-allocated CPS trees: names either represent ASM
+ * registers or ASM labels. (Since register names are often reused,
+ * names are no longer globally unique as previously).
+ */
+object RegisterCPSTreeModule extends CPSTreeModule {
+  sealed abstract class Name {
+    override def toString: String = this match {
+      case Reg(r) => r.toString
+      case Label(l) => l.toString
+    }
+  }
+  case class Reg(reg: ASMRegister) extends Name
+  case class Label(label: Symbol) extends Name
+
+  type ValuePrimitive = CPSValuePrimitive
+  type TestPrimitive = CPSTestPrimitive
+  type Literal = Int
+}
