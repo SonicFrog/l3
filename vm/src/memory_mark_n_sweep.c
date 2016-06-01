@@ -111,7 +111,7 @@ static value_t* find_block(unsigned int size) {
     value_t *curr = freelist;
 
     do {
-        size_t length = ACTUAL_TO_USER_SIZE(header_unpack_size(curr));
+        size_t length = header_unpack_size(curr);
 
         if (length == required_size) {
                 prev_best = prev;
