@@ -15,7 +15,8 @@
 #define HEADER_TAG_MASK 0xFF
 
 #define IS_VADDR(v) ((v) & 0x3 == 0)
-#define BLOCK_IS_FREE(b) (header_unpack_tag(b) == 255)
+#define TAG_FREE 255
+#define BLOCK_IS_FREE(b) (header_unpack_tag(b) == TAG_FREE)
 
 // Allocate blocks of at least 2 words
 #define USER_TO_ACTUAL_SIZE(s) ((s == 0) ? 2 : (s + 1))
@@ -62,84 +63,11 @@ static value_t addr_p_to_v(value_t* p_addr) {
     return (p_addr - memory_start) * sizeof(value_t);
 }
 
-
-/**
- * LIST FUNCTIONS
- **/
-/**
- * Next element in the free list
- **/
-static inline value_t* list_next(value_t *e) {
-    return addr_v_to_p(e[1]);
-}
-
-/**
- * Sets the next element in the freelist
- **/
-static inline void set_next(value_t *e, value_t *tail) {
-    e[1] = addr_p_to_v(tail);
-}
-
-/**
- * Returns true if this list has no next element
- **/
-static inline bool is_empty(value_t *e) {
-    return addr_p_to_v(e) == addr_p_to_v(NULL);
-}
-
-static inline bool has_next(value_t *e) {
-    return addr_v_to_p(e[1]) == NULL;
-}
-
 static inline bool in_heap(value_t vaddr) {
     value_t* p_addr = addr_v_to_p(vaddr);
     return heap_start >= p_addr && p_addr <= memory_end;
 }
 
-
-/**
- * BLOCK MANIPULATION FUNCTIONS
- **/
-static value_t* find_block(unsigned int size) {
-    size_t required_size = USER_TO_ACTUAL_SIZE(size);
-    unsigned int best_fit_sz = 0;
-
-    value_t *prev = NULL;
-    value_t *prev_best = NULL;
-    value_t *best = NULL;
-
-    value_t *curr = freelist;
-
-    do {
-        size_t length = header_unpack_size(curr);
-
-        if (length == required_size) {
-                prev_best = prev;
-                best = curr;
-                break;
-        } else if (length > required_size) {
-            if (best_fit_sz > size) {
-                best_fit_sz = size;
-                prev_best = prev;
-                best = curr;
-            }
-        }
-
-        prev = curr;
-        curr = list_next(curr);
-    } while (has_next(curr));
-
-    // remove allocated block from list
-    if (prev_best == NULL) {
-        freelist = list_next(best);
-    } else {
-        set_next(prev_best, list_next(best));
-    }
-
-    //TODO: handle shrinking block to required size!
-
-    return best;
-}
 
 /**
  * BITMAP MANIPULATION FUNCTIONS
@@ -191,6 +119,95 @@ static inline void mark_bit(value_t vaddr) {
 static inline void unmark_bit(value_t vaddr) {
     assert(in_heap(vaddr));
 }
+
+
+/**
+ * LIST FUNCTIONS
+ **/
+/**
+ * Next element in the free list
+ **/
+static inline value_t* list_next(value_t *e) {
+    return addr_v_to_p(e[1]);
+}
+
+/**
+ * Sets the next element in the freelist
+ **/
+static inline void set_next(value_t *e, value_t *tail) {
+    e[1] = addr_p_to_v(tail);
+}
+
+/**
+ * Returns true if this list has no next element
+ **/
+static inline bool is_empty(value_t *e) {
+    return addr_p_to_v(e) == addr_p_to_v(NULL);
+}
+
+static inline bool has_next(value_t *e) {
+    return addr_v_to_p(e[1]) == NULL;
+}
+
+
+/**
+ * BLOCK MANIPULATION FUNCTIONS
+ **/
+static value_t* find_block(unsigned int size) {
+    size_t required_size = USER_TO_ACTUAL_SIZE(size);
+    unsigned int best_fit_sz = 0;
+
+    value_t *prev = NULL;
+    value_t *prev_best = NULL;
+    value_t *best = NULL;
+
+    value_t *curr = freelist;
+
+    while (curr != NULL) {
+        size_t length = header_unpack_size(curr);
+
+        if (length == required_size) { //Exact size match
+                prev_best = prev;
+                best = curr;
+                break;
+        } else if (length > required_size) {
+            if (best_fit_sz > size) {
+                best_fit_sz = size;
+                prev_best = prev;
+                best = curr;
+            }
+        }
+
+        prev = curr;
+        curr = list_next(curr);
+    }
+
+    if (best == NULL) {
+        return NULL;
+    }
+
+    // remove allocated block from list
+    if (prev_best == NULL) {
+        freelist = list_next(best);
+    } else {
+        set_next(prev_best, list_next(best));
+    }
+
+    size_t blen = header_unpack_size(best);
+
+    if (required_size <= blen) {
+        assert(blen - required_size >= 2);
+        value_t *eob = best + required_size;
+        eob[0] = header_pack(TAG_FREE, blen - required_size);
+        set_next(eob, freelist);
+        freelist = eob;
+    }
+
+    mark_bit(addr_p_to_v(best));
+
+    return best;
+}
+
 
 /**
  * GC INTERFACE
