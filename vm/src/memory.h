@@ -9,7 +9,7 @@
 
 // the type of garbage collector to use
 // TODO Switch to your mark-n-sweep gc once you're done
-#define GC_VERSION GC_NOFREE
+#define GC_VERSION GC_MARK_N_SWEEP
 
 typedef enum {
   tag_String = 200,
