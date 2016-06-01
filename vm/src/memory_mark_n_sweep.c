@@ -27,42 +27,6 @@
 static value_t *memory_start = NULL;
 static value_t *memory_end = NULL;
 
-static value_t *heap_start = NULL;
-static value_t *bitmap_start = NULL;
-
-static value_t *freelist = NULL;
-
-static value_t* addr_v_to_p(value_t v_addr) {
-    return memory_start + (v_addr / sizeof(value_t));
-}
-
-static value_t addr_p_to_v(value_t* p_addr) {
-    return (p_addr - memory_start) * sizeof(value_t);
-}
-
-
-/**
- * LIST FUNCTIONS
- **/
-static inline value_t* list_next(value_t *e) {
-    return addr_v_to_p(e[1]);
-}
-
-static inline void set_next(value_t *e, value_t *tail) {
-    e[1] = addr_p_to_v(tail);
-}
-
-static inline bool list_empty(value_t *e) {
-    return addr_p_to_v(e) == addr_p_to_v(NULL);
-}
-
-
-/**
- * BLOCK MANIPULATION FUNCTIONS
- **/
-static value_t* find_block(unsigned int size) {
-    return NULL;
-}
 
 static inline value_t header_pack(tag_t tag, unsigned int size) {
     assert(size <= 0xFFFFFF);
@@ -79,10 +43,112 @@ static inline tag_t header_unpack_tag(value_t *block) {
 }
 
 /**
+ * Start of blocks
+ **/
+static value_t *heap_start = NULL;
+/**
+ * Start of bitmap
+ **/
+static value_t *bitmap_start = NULL;
+
+static value_t *freelist = NULL;
+
+
+static value_t* addr_v_to_p(value_t v_addr) {
+    return memory_start + (v_addr / sizeof(value_t));
+}
+
+static value_t addr_p_to_v(value_t* p_addr) {
+    return (p_addr - memory_start) * sizeof(value_t);
+}
+
+
+/**
+ * LIST FUNCTIONS
+ **/
+/**
+ * Next element in the free list
+ **/
+static inline value_t* list_next(value_t *e) {
+    return addr_v_to_p(e[1]);
+}
+
+/**
+ * Sets the next element in the freelist
+ **/
+static inline void set_next(value_t *e, value_t *tail) {
+    e[1] = addr_p_to_v(tail);
+}
+
+/**
+ * Returns true if this list has no next element
+ **/
+static inline bool is_empty(value_t *e) {
+    return addr_p_to_v(e) == addr_p_to_v(NULL);
+}
+
+static inline bool has_next(value_t *e) {
+    return addr_v_to_p(e[1]) == NULL;
+}
+
+static inline bool in_heap(value_t vaddr) {
+    value_t* p_addr = addr_v_to_p(vaddr);
+    return heap_start >= p_addr && p_addr <= memory_end;
+}
+
+
+/**
+ * BLOCK MANIPULATION FUNCTIONS
+ **/
+static value_t* find_block(unsigned int size) {
+    size_t required_size = USER_TO_ACTUAL_SIZE(size);
+    unsigned int best_fit_sz = 0;
+
+    value_t *prev = NULL;
+    value_t *prev_best = NULL;
+    value_t *best = NULL;
+
+    value_t *curr = freelist;
+
+    do {
+        size_t length = ACTUAL_TO_USER_SIZE(header_unpack_size(curr));
+
+        if (length == required_size) {
+                prev_best = prev;
+                best = curr;
+                break;
+        } else if (length > required_size) {
+            if (best_fit_sz > size) {
+                best_fit_sz = size;
+                prev_best = prev;
+                best = curr;
+            }
+        }
+
+        prev = curr;
+        curr = list_next(curr);
+    } while (has_next(curr));
+
+    // remove allocated block from list
+    if (prev_best == NULL) {
+        freelist = list_next(best);
+    } else {
+        set_next(prev_best, list_next(best));
+    }
+
+    //TODO: handle shrinking block to required size!
+
+    return best;
+}
+
+/**
  * BITMAP MANIPULATION FUNCTIONS
  **/
 
-#define IS_BIT_FREE(word, pos) (((~word) >> (pos)) & 1)
+/**
+ * Checks that the bit at bitpos in word is zero (not allocated)
+ **/
+#define IS_BIT_FREE(word, bitpos) (((~word) >> (bitpos)) & 1)
 /**
  * Position of the word in the bitmap for the virtual address
  **/
@@ -107,20 +173,23 @@ static inline void make_bitmap() {
 
 static inline size_t bitmap_pos(value_t vaddr) {
     assert(bitmap_start != NULL);
+    assert(in_heap(vaddr));
+
     return (size_t) ((vaddr - addr_p_to_v(bitmap_start)) / sizeof(value_t));
 }
 
 static inline bool is_bit_marked(value_t vaddr) {
+    assert(in_heap(vaddr));
     size_t pos = bitmap_pos(vaddr);
     return !IS_BIT_FREE(bitmap_start[WORD_POS(pos)], BIT_POS(pos));
 }
 
 static inline void mark_bit(value_t vaddr) {
-
+    assert(in_heap(vaddr));
 }
 
 static inline void unmark_bit(value_t vaddr) {
-    ;
+    assert(in_heap(vaddr));
 }
 
 /**
@@ -160,7 +229,16 @@ void memory_set_heap_start(void* ptr) {
     assert(heap_start == NULL);
     assert(ptr != NULL);
 
-    heap_start = ptr;
+    freelist = heap_start = ptr;
+
+    make_bitmap();
+
+    size_t size = memory_end - heap_start >= 2;
+
+    assert(2 <= size);
+
+    freelist[0] = header_pack(255, ACTUAL_TO_USER_SIZE(size));
+    set_next(freelist, NULL);
 }
 
 /* Allocate block, return physical pointer to the new block */
@@ -171,6 +249,16 @@ value_t* memory_allocate(tag_t tag, unsigned int size) {
 
     value_t *fblock = find_block(rsize);
     value_t *user_block = fblock + 1;
+
+    if (fblock == NULL) {
+        //TODO: mark and sweep
+
+        fblock = find_block(rsize);
+
+        if (fblock == NULL) {
+            fail("Out of memory while allocation block of size %ud\n", size);
+        }
+    }
 
     fblock[0] = header_pack(tag, size);
 
