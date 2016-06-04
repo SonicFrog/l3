@@ -66,7 +66,7 @@ static value_t addr_p_to_v(value_t* p_addr) {
 
 static inline bool in_heap(value_t vaddr) {
     value_t* p_addr = addr_v_to_p(vaddr);
-    return heap_start >= p_addr && p_addr <= memory_end;
+    return bitmap_start >= p_addr && p_addr < memory_end;
 }
 
 
@@ -102,23 +102,29 @@ static inline void make_bitmap() {
 
 static inline size_t bitmap_pos(value_t vaddr) {
     assert(bitmap_start != NULL);
-    assert(in_heap(vaddr));
 
-    return (size_t) ((vaddr - addr_p_to_v(bitmap_start)) / sizeof(value_t));
+    return (size_t) ((vaddr - addr_p_to_v(heap_start)) / sizeof(value_t));
 }
 
 static inline bool is_bit_marked(value_t vaddr) {
-    assert(in_heap(vaddr));
+    assert(bitmap_start != NULL);
+
     size_t pos = bitmap_pos(vaddr);
     return !IS_BIT_FREE(bitmap_start[WORD_POS(pos)], BIT_POS(pos));
 }
 
 static inline void mark_bit(value_t vaddr) {
     assert(in_heap(vaddr));
+
+    size_t pos = bitmap_pos(vaddr);
+    bitmap_start[WORD_POS(pos)] = bitmap_start[WORD_POS(pos)] | (1 << BIT_POS(pos));
 }
 
 static inline void unmark_bit(value_t vaddr) {
     assert(in_heap(vaddr));
+
+    size_t pos = bitmap_pos(vaddr);
+    bitmap_start[WORD_POS(pos)] = bitmap_start[WORD_POS(pos) & (0 << BIT_POS(pos))];
 }
 
 
@@ -167,14 +173,16 @@ static value_t* find_block(unsigned int size) {
 
     value_t *curr = freelist;
 
-    while (curr != NULL) {
-        size_t length = header_unpack_size(curr);
+    while (!is_empty(curr)) {
+        size_t length = USER_TO_ACTUAL_SIZE(header_unpack_size(curr));
 
-        if (length == required_size) { //Exact size match
-                prev_best = prev;
-                best = curr;
-                break;
+        if (length == required_size) {
+            //Exact size match stop here
+            prev_best = prev;
+            best = curr;
+            break;
         } else if (length > required_size) {
+            // Bigger size match only remember if smaller than previous match
             if (best_fit_sz > size) {
                 best_fit_sz = size;
                 prev_best = prev;
@@ -212,9 +220,37 @@ static value_t* find_block(unsigned int size) {
     return best;
 }
 
+void recursive_mark(value_t root) {
+    assert(is_bit_marked(root));
+    if (!in_heap(root)) {
+        return;
+    }
+
+    value_t *paddr = addr_v_to_p(root);
+    unsigned int i;
+    unsigned int bsize = header_unpack_size(paddr);
+
+    for(i = 0; i < bsize; i++) {
+        value_t *ptr = paddr + i;
+        value_t content = *ptr;
+
+        if (IS_VADDR(content)) {
+            recursive_mark(content);
+        }
+
+        unmark_bit(root);
+    }
+}
 
 void mark() {
-    //TODO: call recursive marking with each of the base registers
+    reg_bank_t regs[] = {Lb, Ob, Ib};
+    unsigned int i;
+    unsigned int reg_count = sizeof(regs) / sizeof(reg_bank_t);
+
+    for (i = 0; i < reg_count; i++) {
+        value_t *root = engine_get_base_register(regs[i]);
+        recursive_mark(addr_p_to_v(root));
+    }
 }
 
 void sweep() {
@@ -245,31 +281,10 @@ void sweep() {
             }
         }
 
-        curr++; //TODO: more efficient sweeping!
+        curr += USER_TO_ACTUAL_SIZE(header_unpack_size(curr));
     }
 }
 
-void recursive_mark(value_t root) {
-    assert(is_bit_marked(root));
-    if (!in_heap(root)) {
-        return;
-    }
-
-    value_t *paddr = addr_v_to_p(root);
-    unsigned int i;
-    unsigned int bsize = header_unpack_size(paddr);
-
-    for(i = 0; i < bsize; i++) {
-        value_t *ptr = paddr + i;
-        value_t content = *ptr;
-
-        if (IS_VADDR(content)) {
-            recursive_mark(content);
-        }
-
-        unmark_bit(root);
-    }
-}
 
 /**
  * GC INTERFACE
@@ -281,7 +296,7 @@ char* memory_get_identity() {
 /* Setup the memory allocator and garbage collector */
 void memory_setup(size_t total_byte_size) {
     memory_start = calloc(total_byte_size, 1);
-    memory_end = memory_start + total_byte_size;
+    memory_end = memory_start + (total_byte_size / sizeof(value_t));
 
     if (memory_start == NULL) {
         fail("Failed to allocate heap: %s", strerror(errno));
