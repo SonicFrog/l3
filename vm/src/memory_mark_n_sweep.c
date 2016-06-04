@@ -4,6 +4,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #include "memory.h"
 #include "fail.h"
@@ -14,7 +15,7 @@
 #define HEADER_SIZE_MASK 0xFFFFFF00
 #define HEADER_TAG_MASK 0xFF
 
-#define IS_VADDR(v) ((v) & 0x3 == 0)
+#define IS_VADDR(v) (((v) & 0x3) == 0)
 #define TAG_FREE 255
 #define BLOCK_IS_FREE(b) (header_unpack_tag(b) == TAG_FREE)
 
@@ -154,6 +155,9 @@ static inline bool has_next(value_t *e) {
  * BLOCK MANIPULATION FUNCTIONS
  **/
 static value_t* find_block(unsigned int size) {
+    assert(heap_start != NULL);
+    assert(freelist != NULL);
+
     size_t required_size = USER_TO_ACTUAL_SIZE(size);
     unsigned int best_fit_sz = 0;
 
@@ -182,7 +186,7 @@ static value_t* find_block(unsigned int size) {
         curr = list_next(curr);
     }
 
-    if (best == NULL) {
+    if (best == NULL) { // Out of memory need a mark & sweep!
         return NULL;
     }
 
@@ -209,6 +213,64 @@ static value_t* find_block(unsigned int size) {
 }
 
 
+void mark() {
+    //TODO: call recursive marking with each of the base registers
+}
+
+void sweep() {
+    value_t *curr = heap_start;
+    value_t *prev_free = NULL;
+
+    while(curr < memory_end) {
+        value_t vcurr = addr_p_to_v(curr);
+
+        if (is_bit_marked(vcurr) || BLOCK_IS_FREE(curr)) {
+            unmark_bit(vcurr);
+
+            if (prev_free != NULL) {
+                //Coalesce since previous block is unallocated
+                unsigned int old_size = USER_TO_ACTUAL_SIZE(header_unpack_size(prev_free));
+                unsigned int new_size = old_size + USER_TO_ACTUAL_SIZE(header_unpack_size(curr));
+                prev_free[0] = header_pack(TAG_FREE, ACTUAL_TO_USER_SIZE(new_size));
+            }
+        }
+        else {
+            //Still reachable can't coalesce anymore
+            mark_bit(vcurr);
+
+            if (prev_free != NULL) {
+                set_next(prev_free, freelist);
+                freelist = prev_free;
+                prev_free = NULL;
+            }
+        }
+
+        curr++; //TODO: more efficient sweeping!
+    }
+}
+
+void recursive_mark(value_t root) {
+    assert(is_bit_marked(root));
+    if (!in_heap(root)) {
+        return;
+    }
+
+    value_t *paddr = addr_v_to_p(root);
+    unsigned int i;
+    unsigned int bsize = header_unpack_size(paddr);
+
+    for(i = 0; i < bsize; i++) {
+        value_t *ptr = paddr + i;
+        value_t content = *ptr;
+
+        if (IS_VADDR(content)) {
+            recursive_mark(content);
+        }
+
+        unmark_bit(root);
+    }
+}
+
 /**
  * GC INTERFACE
  **/
@@ -220,6 +282,10 @@ char* memory_get_identity() {
 void memory_setup(size_t total_byte_size) {
     memory_start = calloc(total_byte_size, 1);
     memory_end = memory_start + total_byte_size;
+
+    if (memory_start == NULL) {
+        fail("Failed to allocate heap: %s", strerror(errno));
+    }
 }
 
 /* Tear down the memory */
@@ -250,11 +316,11 @@ void memory_set_heap_start(void* ptr) {
 
     make_bitmap();
 
-    size_t size = memory_end - heap_start >= 2;
+    size_t size = memory_end - heap_start;
 
     assert(2 <= size);
 
-    freelist[0] = header_pack(255, ACTUAL_TO_USER_SIZE(size));
+    freelist[0] = header_pack(TAG_FREE, ACTUAL_TO_USER_SIZE(size));
     set_next(freelist, NULL);
 }
 
@@ -262,16 +328,18 @@ void memory_set_heap_start(void* ptr) {
 value_t* memory_allocate(tag_t tag, unsigned int size) {
     unsigned int rsize = USER_TO_ACTUAL_SIZE(size);
 
-    assert(rsize >= 2);
+    assert(2 <= rsize);
 
     value_t *fblock = find_block(rsize);
     value_t *user_block = fblock + 1;
 
     if (fblock == NULL) {
-        //TODO: mark and sweep
+        mark();
+        sweep();
 
         fblock = find_block(rsize);
 
+        // find block returns NULL when memory is full!
         if (fblock == NULL) {
             fail("Out of memory while allocation block of size %ud\n", size);
         }
