@@ -66,7 +66,7 @@ static value_t addr_p_to_v(value_t* p_addr) {
 
 static inline bool in_heap(value_t vaddr) {
     value_t* p_addr = addr_v_to_p(vaddr);
-    return bitmap_start >= p_addr && p_addr < memory_end;
+    return heap_start >= p_addr && p_addr < memory_end;
 }
 
 
@@ -102,15 +102,24 @@ static inline void make_bitmap() {
 
 static inline size_t bitmap_pos(value_t vaddr) {
     assert(bitmap_start != NULL);
+    assert(in_heap(vaddr));
 
-    return (size_t) ((vaddr - addr_p_to_v(heap_start)) / sizeof(value_t));
+    value_t heap_vaddr = addr_p_to_v(heap_start);
+    size_t pos = (size_t) ((vaddr - heap_vaddr) / sizeof(value_t));
+
+    return pos;
 }
 
 static inline bool is_bit_marked(value_t vaddr) {
     assert(bitmap_start != NULL);
+    assert(in_heap(vaddr));
 
     size_t pos = bitmap_pos(vaddr);
-    return !IS_BIT_FREE(bitmap_start[WORD_POS(pos)], BIT_POS(pos));
+    size_t word_pos = WORD_POS(pos);
+    value_t byte_value = bitmap_start[word_pos];
+
+
+    return !IS_BIT_FREE(byte_value, BIT_POS(pos));
 }
 
 static inline void mark_bit(value_t vaddr) {
@@ -124,7 +133,7 @@ static inline void unmark_bit(value_t vaddr) {
     assert(in_heap(vaddr));
 
     size_t pos = bitmap_pos(vaddr);
-    bitmap_start[WORD_POS(pos)] = bitmap_start[WORD_POS(pos) & (0 << BIT_POS(pos))];
+    bitmap_start[WORD_POS(pos)] = bitmap_start[WORD_POS(pos)] & ~(1 << BIT_POS(pos));
 }
 
 
@@ -153,7 +162,7 @@ static inline bool is_empty(value_t *e) {
 }
 
 static inline bool has_next(value_t *e) {
-    return addr_v_to_p(e[1]) == NULL;
+    return addr_v_to_p(e[1]) != NULL;
 }
 
 
@@ -222,9 +231,7 @@ static value_t* find_block(unsigned int size) {
 
 void recursive_mark(value_t root) {
     assert(is_bit_marked(root));
-    if (!in_heap(root)) {
-        return;
-    }
+    assert(in_heap(root));
 
     value_t *paddr = addr_v_to_p(root);
     unsigned int i;
