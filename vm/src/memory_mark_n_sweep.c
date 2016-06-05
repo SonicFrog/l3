@@ -30,7 +30,7 @@ static value_t *memory_start = NULL;
 static value_t *memory_end = NULL;
 
 
-#ifndef DEBUG
+#ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...) fprintf(stderr, "%s:%d " fmt, \
                                       __FILE__, __LINE__, ##__VA_ARGS__)
 #else
@@ -181,7 +181,6 @@ static value_t* find_block(unsigned int size) {
     assert(heap_start != NULL);
     assert(freelist != NULL);
 
-    size_t required_size = USER_TO_ACTUAL_SIZE(size);
     unsigned int best_fit_sz = 0;
 
     value_t *prev = NULL;
@@ -193,15 +192,15 @@ static value_t* find_block(unsigned int size) {
     while (!is_empty(curr)) {
         size_t length = USER_TO_ACTUAL_SIZE(header_unpack_size(curr));
 
-        if (length == required_size) {
+        if (length == size) {
             //Exact size match stop here
             prev_best = prev;
             best = curr;
             break;
-        } else if (length > required_size) {
+        } else if (length > size) {
             // Bigger size match only remember if smaller than previous match
-            if (best == NULL || best_fit_sz > size) {
-                best_fit_sz = size;
+            if (best == NULL || best_fit_sz > length) {
+                best_fit_sz = length;
                 prev_best = prev;
                 best = curr;
             }
@@ -222,16 +221,14 @@ static value_t* find_block(unsigned int size) {
         set_next(prev_best, list_next(best));
     }
 
-    size_t blen = header_unpack_size(best);
+    size_t blen = USER_TO_ACTUAL_SIZE(header_unpack_size(best));
 
-    if (required_size < blen) {
-        value_t *eob = best + required_size;
-        eob[0] = header_pack(TAG_FREE, ACTUAL_TO_USER_SIZE(blen - required_size));
+    if (size != blen) {
+        value_t *eob = best + size;
+        eob[0] = header_pack(TAG_FREE, ACTUAL_TO_USER_SIZE(blen - size));
         set_next(eob, freelist);
         freelist = eob;
     }
-
-    mark_bit(addr_p_to_v(best));
 
     return best;
 }
@@ -270,8 +267,11 @@ void sweep() {
     value_t *curr = heap_start;
     value_t *prev_free = NULL;
 
+    freelist = NULL;
+
     while(curr < memory_end) {
-        value_t vcurr = addr_p_to_v(curr);
+        // Here we need to increase the pointer since we pass a increased one to the user
+        value_t vcurr = addr_p_to_v(USER_BLOCK_START(curr));
 
         if (is_bit_marked(vcurr) || BLOCK_IS_FREE(curr)) {
             unmark_bit(vcurr);
@@ -281,6 +281,11 @@ void sweep() {
                 unsigned int old_size = USER_TO_ACTUAL_SIZE(header_unpack_size(prev_free));
                 unsigned int new_size = old_size + USER_TO_ACTUAL_SIZE(header_unpack_size(curr));
                 prev_free[0] = header_pack(TAG_FREE, ACTUAL_TO_USER_SIZE(new_size));
+            }
+            else {
+                // We found the first free block after a still allocated block!
+                prev_free = curr;
+                curr[0] = header_pack(TAG_FREE, header_unpack_size(curr));
             }
         }
         else {
@@ -295,6 +300,11 @@ void sweep() {
         }
 
         curr += USER_TO_ACTUAL_SIZE(header_unpack_size(curr));
+    }
+
+    if (prev_free != NULL) {
+        set_next(prev_free, freelist);
+        freelist = prev_free;
     }
 }
 
@@ -358,14 +368,16 @@ void memory_set_heap_start(void* ptr) {
 
 /* Allocate block, return physical pointer to the new block */
 value_t* memory_allocate(tag_t tag, unsigned int size) {
-    value_t *fblock = find_block(size);
-    value_t *user_block = fblock + 1;
+    size_t real_size = USER_TO_ACTUAL_SIZE(size);
+
+    value_t *fblock = find_block(real_size);
+    value_t *user_block;
 
     if (fblock == NULL) {
         mark();
         sweep();
 
-        fblock = find_block(size);
+        fblock = find_block(real_size);
 
         // find block returns NULL when memory is full!
         if (fblock == NULL) {
@@ -374,6 +386,9 @@ value_t* memory_allocate(tag_t tag, unsigned int size) {
     }
 
     fblock[0] = header_pack(tag, size);
+    user_block = USER_BLOCK_START(fblock);
+
+    mark_bit(addr_p_to_v(user_block));
 
     return user_block;
 }
