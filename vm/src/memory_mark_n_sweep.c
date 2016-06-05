@@ -200,7 +200,7 @@ static value_t* find_block(unsigned int size) {
             break;
         } else if (length > required_size) {
             // Bigger size match only remember if smaller than previous match
-            if (best_fit_sz > size) {
+            if (best == NULL || best_fit_sz > size) {
                 best_fit_sz = size;
                 prev_best = prev;
                 best = curr;
@@ -217,17 +217,16 @@ static value_t* find_block(unsigned int size) {
 
     // remove allocated block from list
     if (prev_best == NULL) {
-        freelist = list_next(best);
+        freelist = list_next(freelist);
     } else {
         set_next(prev_best, list_next(best));
     }
 
     size_t blen = header_unpack_size(best);
 
-    if (required_size <= blen) {
-        assert(blen - required_size >= 2);
+    if (required_size < blen) {
         value_t *eob = best + required_size;
-        eob[0] = header_pack(TAG_FREE, blen - required_size);
+        eob[0] = header_pack(TAG_FREE, ACTUAL_TO_USER_SIZE(blen - required_size));
         set_next(eob, freelist);
         freelist = eob;
     }
@@ -243,6 +242,8 @@ void recursive_mark(value_t *root) {
     if (in_heap(vaddr) && is_bit_marked(vaddr)) {
         unsigned int i;
         unsigned int bsize = header_unpack_size(root);
+
+        unmark_bit(vaddr);
 
         for(i = 0; i < bsize; i++) {
             value_t content = root[i];
@@ -339,13 +340,15 @@ void memory_set_heap_start(void* ptr) {
     assert(heap_start == NULL);
     assert(ptr != NULL);
 
-    freelist = heap_start = ptr;
+    heap_start = ptr;
 
     make_bitmap();
 
     assert(bitmap_start < heap_start);
 
     size_t size = memory_end - heap_start;
+
+    freelist = heap_start;
 
     assert(2 <= size);
 
@@ -355,18 +358,14 @@ void memory_set_heap_start(void* ptr) {
 
 /* Allocate block, return physical pointer to the new block */
 value_t* memory_allocate(tag_t tag, unsigned int size) {
-    unsigned int rsize = USER_TO_ACTUAL_SIZE(size);
-
-    assert(2 <= rsize);
-
-    value_t *fblock = find_block(rsize);
+    value_t *fblock = find_block(size);
     value_t *user_block = fblock + 1;
 
     if (fblock == NULL) {
         mark();
         sweep();
 
-        fblock = find_block(rsize);
+        fblock = find_block(size);
 
         // find block returns NULL when memory is full!
         if (fblock == NULL) {
