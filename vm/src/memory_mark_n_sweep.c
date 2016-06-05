@@ -132,16 +132,21 @@ static inline bool is_bit_marked(value_t vaddr) {
 
 static inline void mark_bit(value_t vaddr) {
     assert(in_heap(vaddr));
+    assert(!is_bit_marked(vaddr));
 
     size_t pos = bitmap_pos(vaddr);
     bitmap_start[WORD_POS(pos)] = bitmap_start[WORD_POS(pos)] | (1 << BIT_POS(pos));
+
+    assert(is_bit_marked(vaddr));
 }
 
 static inline void unmark_bit(value_t vaddr) {
     assert(in_heap(vaddr));
+    assert(is_bit_marked(vaddr));
 
     size_t pos = bitmap_pos(vaddr);
     bitmap_start[WORD_POS(pos)] = bitmap_start[WORD_POS(pos)] & ~(1 << BIT_POS(pos));
+    assert(!is_bit_marked(vaddr));
 }
 
 
@@ -197,7 +202,7 @@ static value_t* find_block(unsigned int size) {
             prev_best = prev;
             best = curr;
             break;
-        } else if (length > size) {
+        } else if (length > size + 2) {
             // Bigger size match only remember if smaller than previous match
             if (best == NULL || best_fit_sz > length) {
                 best_fit_sz = length;
@@ -238,11 +243,13 @@ void recursive_mark(value_t *root) {
 
     if (in_heap(vaddr) && is_bit_marked(vaddr)) {
         unsigned int i;
-        unsigned int bsize = header_unpack_size(root);
+        unsigned int bsize = memory_get_block_size(root);
 
         unmark_bit(vaddr);
 
         for(i = 0; i < bsize; i++) {
+            assert(root + i < memory_end);
+
             value_t content = root[i];
 
             if (IS_VADDR(content)) {
@@ -381,7 +388,7 @@ value_t* memory_allocate(tag_t tag, unsigned int size) {
 
         // find block returns NULL when memory is full!
         if (fblock == NULL) {
-            fail("Out of memory while allocation block of size %ud\n", size);
+            fail("Out of memory while allocation block of size %u\n", size);
         }
     }
 
