@@ -30,6 +30,14 @@ static value_t *memory_start = NULL;
 static value_t *memory_end = NULL;
 
 
+#ifndef DEBUG
+#define DEBUG_PRINT(fmt, ...) fprintf(stderr, "%s:%d " fmt, \
+                                      __FILE__, __LINE__, ##__VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...) do {} while(0)
+#endif
+
+
 static inline value_t header_pack(tag_t tag, unsigned int size) {
     assert(size <= 0xFFFFFF);
     assert(tag <= 0xFF);
@@ -66,7 +74,7 @@ static value_t addr_p_to_v(value_t* p_addr) {
 
 static inline bool in_heap(value_t vaddr) {
     value_t* p_addr = addr_v_to_p(vaddr);
-    return heap_start >= p_addr && p_addr < memory_end;
+    return heap_start <= p_addr && p_addr < memory_end;
 }
 
 
@@ -229,34 +237,31 @@ static value_t* find_block(unsigned int size) {
     return best;
 }
 
-void recursive_mark(value_t root) {
-    assert(is_bit_marked(root));
-    assert(in_heap(root));
+void recursive_mark(value_t *root) {
+    value_t vaddr = addr_p_to_v(root);
 
-    value_t *paddr = addr_v_to_p(root);
-    unsigned int i;
-    unsigned int bsize = header_unpack_size(paddr);
+    if (in_heap(vaddr) && is_bit_marked(vaddr)) {
+        unsigned int i;
+        unsigned int bsize = header_unpack_size(root);
 
-    for(i = 0; i < bsize; i++) {
-        value_t *ptr = paddr + i;
-        value_t content = *ptr;
+        for(i = 0; i < bsize; i++) {
+            value_t content = root[i];
 
-        if (IS_VADDR(content)) {
-            recursive_mark(content);
+            if (IS_VADDR(content)) {
+                recursive_mark(addr_v_to_p(content));
+            }
         }
-
-        unmark_bit(root);
     }
 }
 
 void mark() {
-    reg_bank_t regs[] = {Lb, Ob, Ib};
+    reg_bank_t regs[] = {Lb, Ib, Ob};
     unsigned int i;
     unsigned int reg_count = sizeof(regs) / sizeof(reg_bank_t);
 
     for (i = 0; i < reg_count; i++) {
         value_t *root = engine_get_base_register(regs[i]);
-        recursive_mark(addr_p_to_v(root));
+        recursive_mark(root);
     }
 }
 
@@ -337,6 +342,8 @@ void memory_set_heap_start(void* ptr) {
     freelist = heap_start = ptr;
 
     make_bitmap();
+
+    assert(bitmap_start < heap_start);
 
     size_t size = memory_end - heap_start;
 
